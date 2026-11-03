@@ -22,5 +22,7 @@ export interface DrainResult {
  * hands each to `deliver` in order and records the outcome.
  */
 export interface OutboxRelayStore {
+  /** Undelivered events (the relay's backlog), for monitoring. */
+  countPending(): Promise<number>;
   drain(limit: number, now: Date, deliver: (pending: PendingOutboxEvent) => Promise<DeliveryOutcome>): Promise<DrainResult>;
 }

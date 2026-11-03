@@ -36,6 +36,12 @@ export class InMemoryOrdersRepository implements OrdersRepository {
     return this.updateStatusSync(id, expectedVersion, status, at);
   }
 
+  async countByStatus(): Promise<Partial<Record<OrderStatus, number>>> {
+    const counts: Partial<Record<OrderStatus, number>> = {};
+    for (const order of this.orders.values()) counts[order.status] = (counts[order.status] ?? 0) + 1;
+    return counts;
+  }
+
   // Synchronous primitives used by InMemoryUnitOfWork to commit without interleaving.
 
   insertSync(order: Order): void {

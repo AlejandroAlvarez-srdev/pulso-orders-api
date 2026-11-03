@@ -4,6 +4,7 @@ import { CLOCK, systemClock } from './common/clock';
 import { APP_CONFIG, type AppConfig } from './config/app-config';
 import { HealthModule } from './health/health.module';
 import { IdempotencyModule } from './idempotency/idempotency.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { OrdersModule } from './orders/orders.module';
 import { OutboxModule } from './outbox/outbox.module';
@@ -15,7 +16,10 @@ export class AppModule {
     return {
       module: AppModule,
       global: true,
-      imports: [PersistenceModule.register(config), AuthModule, MerchantsModule, OrdersModule, OutboxModule, IdempotencyModule, HealthModule],
+      imports: [
+        PersistenceModule.register(config),
+        MetricsModule,
+        AuthModule, MerchantsModule, OrdersModule, OutboxModule, IdempotencyModule, HealthModule],
       providers: [
         { provide: APP_CONFIG, useValue: config },
         { provide: CLOCK, useValue: systemClock },

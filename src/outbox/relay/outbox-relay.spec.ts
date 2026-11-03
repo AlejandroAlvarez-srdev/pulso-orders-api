@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { type Clock } from '../../common/clock';
 import { type AppConfig } from '../../config/app-config';
+import { MetricsService } from '../../metrics/metrics.service';
+import { InMemoryOrdersRepository } from '../../orders/in-memory-orders.repository';
 import { type DomainEvent } from '../domain-event';
 import { InMemoryOutboxService } from '../in-memory-outbox.service';
 import { type WireEvent } from '../wire-format';
@@ -36,14 +38,15 @@ function setup() {
   const clock = new ManualClock();
   const outbox = new InMemoryOutboxService();
   const publisher = new RecordingPublisher();
-  const relay = new OutboxRelay(outbox, publisher, clock, config);
+  const metrics = new MetricsService(new InMemoryOrdersRepository(), outbox);
+  const relay = new OutboxRelay(outbox, publisher, clock, config, metrics);
   const record = (aggregateId: string = randomUUID(), type = 'order.created'): DomainEvent => {
     const event = { id: randomUUID(), type, aggregateId, occurredAt: clock.now(), payload: { orderId: aggregateId } };
     outbox.appendSync(event);
     clock.advance(1);
     return event;
   };
-  return { clock, outbox, publisher, relay, record };
+  return { clock, outbox, publisher, relay, record, metrics };
 }
 
 describe('OutboxRelay', () => {
@@ -144,10 +147,14 @@ describe('OutboxRelay', () => {
   });
 
   it('respects the batch size', async () => {
-    const { outbox, publisher, record, clock } = setup();
-    const relay = new OutboxRelay(outbox, publisher, clock, {
-      outboxRelay: { ...config.outboxRelay, batchSize: 2 },
-    } as AppConfig);
+    const { outbox, publisher, record, clock, metrics } = setup();
+    const relay = new OutboxRelay(
+      outbox,
+      publisher,
+      clock,
+      { outboxRelay: { ...config.outboxRelay, batchSize: 2 } } as AppConfig,
+      metrics,
+    );
     for (let i = 0; i < 5; i++) record();
 
     expect(await relay.runOnce()).toEqual({ published: 2, failed: 0 });

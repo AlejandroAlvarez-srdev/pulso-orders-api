@@ -56,8 +56,9 @@ export class InMemoryUnitOfWork implements UnitOfWork {
         staged.push(() => base.insertSync(order));
       },
       findById: read,
-      // Listing is a read-only use case and never runs inside a transaction.
+      // Reporting reads never run inside a transaction.
       list: (query) => base.list(query),
+      countByStatus: () => base.countByStatus(),
       updateStatus: async (id, expectedVersion, status, at) => {
         const current = await read(id);
         if (!current || current.version !== expectedVersion) return null;

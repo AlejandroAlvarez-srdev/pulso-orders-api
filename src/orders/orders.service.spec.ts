@@ -9,6 +9,7 @@ import {
   InvalidTransitionError,
   NotFoundError,
 } from '../common/domain-errors';
+import { MetricsService } from '../metrics/metrics.service';
 import { InMemoryIdempotencyStore } from '../idempotency/in-memory-idempotency.store';
 import { InMemoryOutboxService } from '../outbox/in-memory-outbox.service';
 import { InMemoryUnitOfWork } from '../persistence/in-memory-unit-of-work';
@@ -47,8 +48,9 @@ function setup() {
   const outbox = new InMemoryOutboxService();
   const uow = new InMemoryUnitOfWork(repo, outbox, idempotency);
   const clock = new SteppingClock();
-  const service = new OrdersService(repo, idempotency, uow, clock, config);
-  return { repo, idempotency, outbox, uow, clock, service };
+  const metrics = new MetricsService(repo, outbox);
+  const service = new OrdersService(repo, idempotency, uow, clock, config, metrics);
+  return { repo, idempotency, outbox, uow, clock, metrics, service };
 }
 
 const merchant = randomUUID();
@@ -86,12 +88,14 @@ describe('OrdersService', () => {
     });
 
     it('replays the original response for the same key and body', async () => {
-      const { service, outbox, repo } = setup();
+      const { service, outbox, repo, metrics } = setup();
 
       const first = await service.create(merchant, input(), 'key-1');
       const second = await service.create(merchant, input(), 'key-1');
 
       expect(second).toEqual({ ...first, replayed: true });
+      expect((await metrics.ordersCreated.get()).values[0].value).toBe(1);
+      expect((await metrics.idempotentReplays.get()).values[0].value).toBe(1);
       expect(outbox.stored()).toHaveLength(1);
       expect((await repo.list({ merchantId: merchant, limit: 10 })).items).toHaveLength(1);
     });

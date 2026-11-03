@@ -3,6 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ProblemDetailsFilter } from './common/http/problem-details.filter';
 import { requestIdMiddleware } from './common/http/request-id.middleware';
 import { createValidationPipe } from './common/http/validation';
+import { MetricsService } from './metrics/metrics.service';
 
 /**
  * Cross-cutting HTTP setup shared by `main.ts` and the e2e suite, so tests
@@ -14,6 +15,7 @@ export function configureApp(app: INestApplication, options: { trustProxy?: bool
   // Behind a load balancer, trust one hop so req.ip (used by the IP rate limit) is the client.
   if (options.trustProxy) express.set('trust proxy', 1);
   app.use(requestIdMiddleware);
+  app.use(app.get(MetricsService).httpMiddleware());
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ProblemDetailsFilter());
   app.enableShutdownHooks();

@@ -29,6 +29,10 @@ export class PrismaOutboxRelayStore implements OutboxRelayStore {
     private readonly transactionTimeoutMs = 30_000,
   ) {}
 
+  countPending(): Promise<number> {
+    return this.prisma.outboxEvent.count({ where: { publishedAt: null } });
+  }
+
   drain(
     limit: number,
     now: Date,

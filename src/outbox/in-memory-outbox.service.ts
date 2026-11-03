@@ -46,6 +46,10 @@ export class InMemoryOutboxService implements OutboxService, OutboxRelayStore {
     return row && { publishedAt: row.publishedAt, attempts: row.attempts, nextAttemptAt: row.nextAttemptAt, lastError: row.lastError };
   }
 
+  async countPending(): Promise<number> {
+    return this.rows.filter((row) => row.publishedAt === null).length;
+  }
+
   async drain(
     limit: number,
     now: Date,

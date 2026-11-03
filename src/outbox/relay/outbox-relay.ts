@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } f
 import { CLOCK, type Clock } from '../../common/clock';
 import { PeriodicTask } from '../../common/periodic-task';
 import { APP_CONFIG, type AppConfig } from '../../config/app-config';
+import { MetricsService } from '../../metrics/metrics.service';
 import { toWireEvent } from '../wire-format';
 import { backoffDelayMs } from './backoff';
 import { EVENT_PUBLISHER, type EventPublisher } from './event-publisher';
@@ -22,6 +23,7 @@ export class OutboxRelay implements OnModuleInit, OnModuleDestroy {
     @Inject(EVENT_PUBLISHER) private readonly publisher: EventPublisher,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly metrics: MetricsService,
   ) {
     this.task = new PeriodicTask('OutboxRelay', config.outboxRelay.intervalMs, () => this.drainAvailable());
   }
@@ -57,8 +59,10 @@ export class OutboxRelay implements OnModuleInit, OnModuleDestroy {
     const result = await this.store.drain(batchSize, now, async ({ event, attempts }): Promise<DeliveryOutcome> => {
       try {
         await this.publisher.publish(toWireEvent(event));
+        this.metrics.outboxDeliveries.inc({ result: 'published' });
         return { status: 'published' };
       } catch (error) {
+        this.metrics.outboxDeliveries.inc({ result: 'failed' });
         const delay = backoffDelayMs(attempts + 1, { baseMs: retryBaseMs, maxMs: retryMaxMs });
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn({ msg: 'event delivery failed', eventId: event.id, attempt: attempts + 1, retryInMs: delay, error: message });

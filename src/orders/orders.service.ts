@@ -9,6 +9,7 @@ import {
   IdempotencyKeyReusedError,
   NotFoundError,
 } from '../common/domain-errors';
+import { MetricsService } from '../metrics/metrics.service';
 import { IDEMPOTENCY_STORE, type IdempotencyStore } from '../idempotency/idempotency.store';
 import { UNIT_OF_WORK, type UnitOfWork } from '../persistence/unit-of-work';
 import { decodeCursor, encodeCursor } from './domain/cursor';
@@ -44,6 +45,7 @@ export class OrdersService {
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(CLOCK) private readonly clock: Clock,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly metrics: MetricsService,
   ) {}
 
   /**
@@ -67,6 +69,7 @@ export class OrdersService {
       if (!existing.response) {
         throw new IdempotencyKeyInFlightError(`Request with Idempotency-Key "${idempotencyKey}" is still in flight`);
       }
+      this.metrics.idempotentReplays.inc();
       return {
         statusCode: existing.response.statusCode,
         body: existing.response.body as OrderResponseDto,
@@ -96,6 +99,7 @@ export class OrdersService {
         await tx.outbox.publish(orderCreated(order));
         await tx.idempotency.complete(merchantId, idempotencyKey, result);
       });
+      this.metrics.ordersCreated.inc();
       return { ...result, replayed: false };
     } catch (error) {
       // Nothing was committed: free the key so the client can retry with it.
@@ -125,15 +129,17 @@ export class OrdersService {
     const current = await this.get(merchantId, orderId);
     assertTransition(current.status, to);
 
-    return this.uow.run(async (tx) => {
-      const updated = await tx.orders.updateStatus(orderId, current.version, to, this.clock.now());
-      if (!updated) {
+    const updated = await this.uow.run(async (tx) => {
+      const changed = await tx.orders.updateStatus(orderId, current.version, to, this.clock.now());
+      if (!changed) {
         throw new ConcurrentModificationError(`Order ${orderId} changed while transitioning to ${to}; reload and retry`);
       }
       if (to === OrderStatus.CANCELLED) {
-        await tx.outbox.publish(orderCancelled(updated, current.status, reason));
+        await tx.outbox.publish(orderCancelled(changed, current.status, reason));
       }
-      return updated;
+      return changed;
     });
+    this.metrics.orderTransitions.inc({ from: current.status, to });
+    return updated;
   }
 }

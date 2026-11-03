@@ -72,4 +72,9 @@ export class PrismaOrdersRepository implements OrdersRepository {
     });
     return count === 1 ? this.findById(id) : null;
   }
+
+  async countByStatus(): Promise<Partial<Record<OrderStatus, number>>> {
+    const groups = await this.prisma.order.groupBy({ by: ['status'], _count: { _all: true } });
+    return Object.fromEntries(groups.map((g) => [g.status, g._count._all]));
+  }
 }

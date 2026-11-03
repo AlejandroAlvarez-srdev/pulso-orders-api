@@ -26,4 +26,6 @@ export interface OrdersRepository {
    * equals `expectedVersion`, bumping it by one. Returns null on a version miss.
    */
   updateStatus(id: string, expectedVersion: number, status: OrderStatus, at: Date): Promise<Order | null>;
+  /** Order counts per status across all merchants, for monitoring. */
+  countByStatus(): Promise<Partial<Record<OrderStatus, number>>>;
 }
