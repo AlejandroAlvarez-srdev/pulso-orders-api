@@ -60,3 +60,13 @@ export class InvalidCursorError extends DomainError {
   readonly code = 'invalid-cursor';
   readonly title = 'Invalid pagination cursor';
 }
+
+export class RateLimitedError extends DomainError {
+  readonly status = 429;
+  readonly code = 'rate-limited';
+  readonly title = 'Too many requests';
+
+  constructor(readonly retryAfterSeconds: number) {
+    super(`Rate limit exceeded; retry in ${retryAfterSeconds}s`);
+  }
+}

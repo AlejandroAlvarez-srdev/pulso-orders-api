@@ -9,7 +9,7 @@ async function bootstrap(): Promise<void> {
   const config = loadConfig();
   const logger = new ConsoleLogger({ json: true });
   const app = await NestFactory.create(AppModule.forRoot(config), { logger });
-  configureApp(app);
+  configureApp(app, { trustProxy: config.trustProxy });
   await app.listen(config.port);
   logger.log(`pulso-orders-api listening on :${config.port} (persistence=${config.persistence})`, 'Bootstrap');
 }

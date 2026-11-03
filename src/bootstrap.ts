@@ -8,8 +8,11 @@ import { createValidationPipe } from './common/http/validation';
  * Cross-cutting HTTP setup shared by `main.ts` and the e2e suite, so tests
  * exercise exactly the pipeline that runs in production.
  */
-export function configureApp(app: INestApplication): INestApplication {
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
+export function configureApp(app: INestApplication, options: { trustProxy?: boolean } = {}): INestApplication {
+  const express = app.getHttpAdapter().getInstance();
+  express.disable('x-powered-by');
+  // Behind a load balancer, trust one hop so req.ip (used by the IP rate limit) is the client.
+  if (options.trustProxy) express.set('trust proxy', 1);
   app.use(requestIdMiddleware);
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ProblemDetailsFilter());

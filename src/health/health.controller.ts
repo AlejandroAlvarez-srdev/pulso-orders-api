@@ -2,6 +2,7 @@ import { Controller, Get, HttpStatus, Inject, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { type Response } from 'express';
 import { Public } from '../common/http/public.decorator';
+import { SkipRateLimit } from '../rate-limit/rate-limit.decorator';
 import { PERSISTENCE_HEALTH, type PersistenceHealth } from '../persistence/persistence-health';
 
 export interface HealthReport {
@@ -11,6 +12,7 @@ export interface HealthReport {
 
 @ApiTags('health')
 @Public()
+@SkipRateLimit()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(PERSISTENCE_HEALTH) private readonly persistence: PersistenceHealth) {}

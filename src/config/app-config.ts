@@ -11,6 +11,15 @@ export interface AppConfig {
   };
   /** API key of the demo merchant seeded by the in-memory driver. */
   demoMerchantApiKey: string;
+  /** Express `trust proxy`: set when running behind a load balancer so req.ip is the client. */
+  trustProxy: boolean;
+  rateLimit: {
+    enabled: boolean;
+    /** Per authenticated merchant. */
+    merchant: { capacity: number; refillPerSecond: number };
+    /** Per client IP on public endpoints such as POST /auth/token. */
+    anonymous: { capacity: number; refillPerSecond: number };
+  };
   idempotency: {
     /** How long a key (and its stored response) stays valid. */
     ttlSeconds: number;
@@ -92,6 +101,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ttlSeconds: readInt(env, 'JWT_TTL_SECONDS', 3600),
     },
     demoMerchantApiKey: env.DEMO_MERCHANT_API_KEY ?? 'pk_demo_pulso_merchant',
+    trustProxy: readBool(env, 'TRUST_PROXY', false),
+    rateLimit: {
+      enabled: readBool(env, 'RATE_LIMIT_ENABLED', true),
+      merchant: {
+        capacity: readInt(env, 'RATE_LIMIT_CAPACITY', 60),
+        refillPerSecond: readInt(env, 'RATE_LIMIT_REFILL_PER_SECOND', 10),
+      },
+      anonymous: {
+        capacity: readInt(env, 'RATE_LIMIT_ANON_CAPACITY', 10),
+        refillPerSecond: readInt(env, 'RATE_LIMIT_ANON_REFILL_PER_SECOND', 1),
+      },
+    },
     idempotency: {
       ttlSeconds: readInt(env, 'IDEMPOTENCY_TTL_SECONDS', 24 * 3600),
       cleanupEnabled: readBool(env, 'IDEMPOTENCY_CLEANUP_ENABLED', true),

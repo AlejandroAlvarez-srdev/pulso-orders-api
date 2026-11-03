@@ -1,6 +1,6 @@
 import { STATUS_CODES } from 'node:http';
 import { HttpException } from '@nestjs/common';
-import { DomainError, InvalidTransitionError } from '../domain-errors';
+import { DomainError, InvalidTransitionError, RateLimitedError } from '../domain-errors';
 
 export const PROBLEM_TYPE_BASE = 'https://docs.pulso.example/problems/';
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
@@ -56,6 +56,7 @@ export function toProblem(error: unknown): ProblemDetails {
     if (error instanceof InvalidTransitionError) {
       Object.assign(problem, { from: error.from, to: error.to, allowed: error.allowed });
     }
+    if (error instanceof RateLimitedError) problem.retryAfter = error.retryAfterSeconds;
     return problem;
   }
 

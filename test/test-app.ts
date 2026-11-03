@@ -22,6 +22,13 @@ export const testConfig: AppConfig = {
   persistence: 'memory',
   jwt: { secret: 'e2e-secret-that-is-long-enough-123456', issuer: 'pulso-orders-api-test', ttlSeconds: 300 },
   demoMerchantApiKey: DEMO_API_KEY,
+  trustProxy: false,
+  // Generous limits so functional suites never throttle; rate-limit.e2e-spec tightens them.
+  rateLimit: {
+    enabled: true,
+    merchant: { capacity: 10_000, refillPerSecond: 1000 },
+    anonymous: { capacity: 10_000, refillPerSecond: 1000 },
+  },
   idempotency: { ttlSeconds: 24 * 3600, cleanupEnabled: false, cleanupIntervalMs: 3600_000 },
   outboxRelay: { enabled: false, intervalMs: 1000, batchSize: 50, retryBaseMs: 1000, retryMaxMs: 60_000 },
 };
@@ -36,8 +43,10 @@ export interface TestApp {
 }
 
 /** Boots the real application wiring (pipes, filters, guards) on in-memory adapters. */
-export async function createTestApp(options: { publisher?: EventPublisher } = {}): Promise<TestApp> {
-  const builder = Test.createTestingModule({ imports: [AppModule.forRoot(testConfig)] });
+export async function createTestApp(
+  options: { publisher?: EventPublisher; config?: Partial<AppConfig> } = {},
+): Promise<TestApp> {
+  const builder = Test.createTestingModule({ imports: [AppModule.forRoot({ ...testConfig, ...options.config })] });
   if (options.publisher) builder.overrideProvider(EVENT_PUBLISHER).useValue(options.publisher);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<INestApplication<App>>({ logger: false });

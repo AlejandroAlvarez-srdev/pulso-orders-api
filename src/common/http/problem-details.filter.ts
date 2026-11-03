@@ -1,5 +1,6 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, Logger } from '@nestjs/common';
 import { type Request, type Response } from 'express';
+import { RateLimitedError } from '../domain-errors';
 import { PROBLEM_CONTENT_TYPE, toProblem } from './problem-details';
 import './request-context';
 
@@ -23,6 +24,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     if (problem.status === 401) res.setHeader('WWW-Authenticate', 'Bearer realm="pulso-orders"');
+    if (exception instanceof RateLimitedError) res.setHeader('Retry-After', String(exception.retryAfterSeconds));
     res.status(problem.status).type(PROBLEM_CONTENT_TYPE).json(problem);
   }
 }
