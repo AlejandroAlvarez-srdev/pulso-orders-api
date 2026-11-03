@@ -11,13 +11,22 @@ import { InMemoryOrdersRepository } from '../orders/in-memory-orders.repository'
 import { ORDERS_REPOSITORY } from '../orders/orders.repository';
 import { PrismaOrdersRepository } from '../orders/prisma-orders.repository';
 import { InMemoryOutboxService } from '../outbox/in-memory-outbox.service';
+import { OUTBOX_RELAY_STORE } from '../outbox/relay/outbox-relay.store';
+import { PrismaOutboxRelayStore } from '../outbox/relay/prisma-outbox-relay.store';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import { PERSISTENCE_HEALTH, type PersistenceHealth } from './persistence-health';
 import { PrismaUnitOfWork } from './prisma-unit-of-work';
 import { PrismaService } from './prisma.service';
 import { UNIT_OF_WORK } from './unit-of-work';
 
-const PORTS = [ORDERS_REPOSITORY, MERCHANTS_REPOSITORY, IDEMPOTENCY_STORE, UNIT_OF_WORK, PERSISTENCE_HEALTH];
+const PORTS = [
+  ORDERS_REPOSITORY,
+  MERCHANTS_REPOSITORY,
+  IDEMPOTENCY_STORE,
+  UNIT_OF_WORK,
+  OUTBOX_RELAY_STORE,
+  PERSISTENCE_HEALTH,
+];
 
 function inMemoryProviders(config: AppConfig): Provider[] {
   const orders = new InMemoryOrdersRepository();
@@ -34,7 +43,8 @@ function inMemoryProviders(config: AppConfig): Provider[] {
     },
     { provide: IDEMPOTENCY_STORE, useValue: idempotency },
     { provide: UNIT_OF_WORK, useValue: new InMemoryUnitOfWork(orders, outbox, idempotency) },
-    // Exposed by class so tests can inspect what a relay would publish.
+    { provide: OUTBOX_RELAY_STORE, useValue: outbox },
+    // Exposed by class so tests can inspect the outbox table.
     { provide: InMemoryOutboxService, useValue: outbox },
     { provide: PERSISTENCE_HEALTH, useValue: health },
   ];
@@ -48,6 +58,7 @@ function prismaProviders(config: AppConfig): Provider[] {
     { provide: MERCHANTS_REPOSITORY, useFactory: (p: PrismaService) => new PrismaMerchantsRepository(p), inject },
     { provide: IDEMPOTENCY_STORE, useFactory: (p: PrismaService) => new PrismaIdempotencyStore(p), inject },
     { provide: UNIT_OF_WORK, useFactory: (p: PrismaService) => new PrismaUnitOfWork(p), inject },
+    { provide: OUTBOX_RELAY_STORE, useFactory: (p: PrismaService) => new PrismaOutboxRelayStore(p), inject },
     { provide: PERSISTENCE_HEALTH, useExisting: PrismaService },
   ];
 }

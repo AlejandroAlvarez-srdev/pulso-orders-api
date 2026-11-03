@@ -63,14 +63,18 @@ model IdempotencyKey {
 }
 
 model OutboxEvent {
-  id          String    @id @db.Uuid
-  type        String    @db.VarChar(100)
-  aggregateId String    @map("aggregate_id") @db.Uuid
-  payload     Json
-  occurredAt  DateTime  @map("occurred_at") @db.Timestamptz(3)
-  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+  id            String    @id @db.Uuid
+  type          String    @db.VarChar(100)
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  payload       Json
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lastError     String?   @map("last_error")
 
-  // Relay polls unpublished events in order.
-  @@index([publishedAt, occurredAt])
+  // Relay polls due, unpublished events; per-aggregate ordering looks up earlier pending rows.
+  @@index([publishedAt, nextAttemptAt])
+  @@index([aggregateId, publishedAt, occurredAt])
   @@map("outbox_events")
 }

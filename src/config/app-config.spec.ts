@@ -25,6 +25,26 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: 'short' })).toThrow(/JWT_SECRET/);
   });
 
+  it('configures the outbox relay', () => {
+    const config = loadConfig({
+      PERSISTENCE: 'memory',
+      JWT_SECRET: secret,
+      OUTBOX_RELAY_ENABLED: 'false',
+      EVENTS_WEBHOOK_URL: 'http://saga.internal/events',
+    });
+
+    expect(config.outboxRelay).toMatchObject({ enabled: false, batchSize: 50, webhookUrl: 'http://saga.internal/events' });
+  });
+
+  it('rejects malformed booleans and URLs', () => {
+    expect(() => loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: secret, OUTBOX_RELAY_ENABLED: 'yes' })).toThrow(
+      /OUTBOX_RELAY_ENABLED/,
+    );
+    expect(() => loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: secret, EVENTS_WEBHOOK_URL: 'nope' })).toThrow(
+      /EVENTS_WEBHOOK_URL/,
+    );
+  });
+
   it('rejects non-numeric ports', () => {
     expect(() => loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: secret, PORT: 'abc' })).toThrow(/PORT/);
   });

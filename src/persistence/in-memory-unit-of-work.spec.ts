@@ -47,11 +47,11 @@ describe('InMemoryUnitOfWork', () => {
       await tx.outbox.publish(event(o.id));
       expect(await tx.orders.findById(o.id)).toMatchObject({ id: o.id });
       expect(await orders.findById(o.id)).toBeNull();
-      expect(outbox.published()).toHaveLength(0);
+      expect(outbox.stored()).toHaveLength(0);
     });
 
     expect(await orders.findById(o.id)).toMatchObject({ id: o.id });
-    expect(outbox.published()).toHaveLength(1);
+    expect(outbox.stored()).toHaveLength(1);
   });
 
   it('discards staged writes when the work throws', async () => {
@@ -67,7 +67,7 @@ describe('InMemoryUnitOfWork', () => {
     ).rejects.toThrow('boom');
 
     expect(await orders.findById(o.id)).toBeNull();
-    expect(outbox.published()).toHaveLength(0);
+    expect(outbox.stored()).toHaveLength(0);
   });
 
   it('restores every adapter when a write fails during commit', async () => {
@@ -105,6 +105,6 @@ describe('InMemoryUnitOfWork', () => {
 
     await expect(slow).rejects.toBeInstanceOf(ConcurrentModificationError);
     expect(await orders.findById(o.id)).toMatchObject({ status: OrderStatus.PAYMENT_PENDING, version: 1 });
-    expect(outbox.published()).toHaveLength(0);
+    expect(outbox.stored()).toHaveLength(0);
   });
 });

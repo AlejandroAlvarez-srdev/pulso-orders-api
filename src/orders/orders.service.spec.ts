@@ -68,7 +68,7 @@ describe('OrdersService', () => {
 
       expect(result).toMatchObject({ statusCode: 201, replayed: false });
       expect(result.body).toMatchObject({ merchantId: merchant, status: S.CREATED, amountCents: 18_950 });
-      expect(outbox.published()).toEqual([
+      expect(outbox.stored()).toEqual([
         expect.objectContaining({
           type: 'order.created',
           aggregateId: result.body.id,
@@ -84,7 +84,7 @@ describe('OrdersService', () => {
       const second = await service.create(merchant, input(), 'key-1');
 
       expect(second).toEqual({ ...first, replayed: true });
-      expect(outbox.published()).toHaveLength(1);
+      expect(outbox.stored()).toHaveLength(1);
       expect((await repo.list({ merchantId: merchant, limit: 10 })).items).toHaveLength(1);
     });
 
@@ -145,7 +145,7 @@ describe('OrdersService', () => {
       const retry = await service.create(merchant, input(), 'key-1');
 
       expect(retry).toMatchObject({ statusCode: 201, replayed: false });
-      expect(outbox.published()).toHaveLength(1);
+      expect(outbox.stored()).toHaveLength(1);
     });
   });
 
@@ -159,7 +159,7 @@ describe('OrdersService', () => {
       await expect(service.create(merchant, input(), 'key-1')).rejects.toThrow('outbox unavailable');
 
       expect((await repo.list({ merchantId: merchant, limit: 10 })).items).toHaveLength(0);
-      expect(outbox.published()).toHaveLength(0);
+      expect(outbox.stored()).toHaveLength(0);
       expect(await idempotency.reserve(merchant, 'key-1', 'probe', new Date())).toEqual({ reserved: true });
     });
 
@@ -174,7 +174,7 @@ describe('OrdersService', () => {
 
       expect(retry).toMatchObject({ statusCode: 201, replayed: false });
       expect((await repo.list({ merchantId: merchant, limit: 10 })).items.map((o) => o.id)).toEqual([retry.body.id]);
-      expect(outbox.published()).toEqual([expect.objectContaining({ type: 'order.created', aggregateId: retry.body.id })]);
+      expect(outbox.stored()).toEqual([expect.objectContaining({ type: 'order.created', aggregateId: retry.body.id })]);
     });
 
     it('does not complete the idempotency key when the transaction rolls back', async () => {
@@ -199,7 +199,7 @@ describe('OrdersService', () => {
       await expect(service.transition(merchant, id, S.CANCELLED, 'x')).rejects.toThrow('outbox unavailable');
 
       expect(await repo.findById(id)).toMatchObject({ status: S.PAID, version: 2 });
-      expect(outbox.published().map((e) => e.type)).toEqual(['order.created']);
+      expect(outbox.stored().map((e) => e.type)).toEqual(['order.created']);
     });
   });
 
@@ -230,7 +230,7 @@ describe('OrdersService', () => {
 
       await expect(service.transition(merchant, id, S.CANCELLED)).rejects.toBeInstanceOf(InvalidTransitionError);
       expect((await repo.findById(id))!.status).toBe(S.DELIVERED);
-      expect(outbox.published().map((e) => e.type)).toEqual(['order.created']);
+      expect(outbox.stored().map((e) => e.type)).toEqual(['order.created']);
     });
 
     it('publishes order.cancelled with the previous status and reason', async () => {
@@ -239,7 +239,7 @@ describe('OrdersService', () => {
 
       await service.transition(merchant, id, S.CANCELLED, 'Store closed early');
 
-      expect(outbox.published().at(-1)).toMatchObject({
+      expect(outbox.stored().at(-1)).toMatchObject({
         type: 'order.cancelled',
         aggregateId: id,
         payload: { orderId: id, merchantId: merchant, previousStatus: S.PAID, reason: 'Store closed early' },
@@ -250,7 +250,7 @@ describe('OrdersService', () => {
       const { service, outbox } = setup();
       await createAt(service, S.IN_PROGRESS);
 
-      expect(outbox.published().map((e) => e.type)).toEqual(['order.created']);
+      expect(outbox.stored().map((e) => e.type)).toEqual(['order.created']);
     });
 
     it('detects a concurrent status change', async () => {

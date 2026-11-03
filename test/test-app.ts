@@ -10,6 +10,8 @@ import { InMemoryMerchantsRepository } from '../src/merchants/in-memory-merchant
 import { DEMO_MERCHANT, hashApiKey } from '../src/merchants/merchant';
 import { MERCHANTS_REPOSITORY } from '../src/merchants/merchants.repository';
 import { InMemoryOutboxService } from '../src/outbox/in-memory-outbox.service';
+import { EVENT_PUBLISHER, type EventPublisher } from '../src/outbox/relay/event-publisher';
+import { OutboxRelay } from '../src/outbox/relay/outbox-relay';
 
 export const DEMO_API_KEY = 'pk_test_demo_merchant';
 export const OTHER_API_KEY = 'pk_test_other_merchant';
@@ -20,19 +22,23 @@ export const testConfig: AppConfig = {
   persistence: 'memory',
   jwt: { secret: 'e2e-secret-that-is-long-enough-123456', issuer: 'pulso-orders-api-test', ttlSeconds: 300 },
   demoMerchantApiKey: DEMO_API_KEY,
+  outboxRelay: { enabled: false, intervalMs: 1000, batchSize: 50, retryBaseMs: 1000, retryMaxMs: 60_000 },
 };
 
 export interface TestApp {
   app: INestApplication<App>;
   outbox: InMemoryOutboxService;
+  relay: OutboxRelay;
   /** Fresh agent per call so headers never leak between requests. */
   http: () => ReturnType<typeof request>;
   token: (apiKey?: string, scopes?: string[]) => Promise<string>;
 }
 
 /** Boots the real application wiring (pipes, filters, guards) on in-memory adapters. */
-export async function createTestApp(): Promise<TestApp> {
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(testConfig)] }).compile();
+export async function createTestApp(options: { publisher?: EventPublisher } = {}): Promise<TestApp> {
+  const builder = Test.createTestingModule({ imports: [AppModule.forRoot(testConfig)] });
+  if (options.publisher) builder.overrideProvider(EVENT_PUBLISHER).useValue(options.publisher);
+  const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<INestApplication<App>>({ logger: false });
   configureApp(app);
   await app.init();
@@ -48,6 +54,7 @@ export async function createTestApp(): Promise<TestApp> {
   return {
     app,
     outbox: moduleRef.get(InMemoryOutboxService),
+    relay: moduleRef.get(OutboxRelay),
     http,
     token: async (apiKey = DEMO_API_KEY, scopes?: string[]) => {
       const res = await http().post('/auth/token').send({ apiKey, scopes }).expect(200);

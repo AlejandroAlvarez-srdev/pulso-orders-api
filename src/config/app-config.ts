@@ -11,6 +11,15 @@ export interface AppConfig {
   };
   /** API key of the demo merchant seeded by the in-memory driver. */
   demoMerchantApiKey: string;
+  outboxRelay: {
+    enabled: boolean;
+    intervalMs: number;
+    batchSize: number;
+    retryBaseMs: number;
+    retryMaxMs: number;
+    /** When set, events are POSTed here; otherwise they are written to the log. */
+    webhookUrl?: string;
+  };
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
@@ -27,6 +36,24 @@ function readInt(env: NodeJS.ProcessEnv, key: string, fallback: number): number 
     throw new ConfigError(`${key} must be a positive integer, got "${raw}"`);
   }
   return value;
+}
+
+function readBool(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return fallback;
+  if (raw === 'true' || raw === '1') return true;
+  if (raw === 'false' || raw === '0') return false;
+  throw new ConfigError(`${key} must be true or false, got "${raw}"`);
+}
+
+function readUrl(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const raw = env[key];
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).toString();
+  } catch {
+    throw new ConfigError(`${key} must be an absolute URL, got "${raw}"`);
+  }
 }
 
 /**
@@ -59,5 +86,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ttlSeconds: readInt(env, 'JWT_TTL_SECONDS', 3600),
     },
     demoMerchantApiKey: env.DEMO_MERCHANT_API_KEY ?? 'pk_demo_pulso_merchant',
+    outboxRelay: {
+      enabled: readBool(env, 'OUTBOX_RELAY_ENABLED', true),
+      intervalMs: readInt(env, 'OUTBOX_RELAY_INTERVAL_MS', 1000),
+      batchSize: readInt(env, 'OUTBOX_RELAY_BATCH_SIZE', 50),
+      retryBaseMs: readInt(env, 'OUTBOX_RELAY_RETRY_BASE_MS', 1000),
+      retryMaxMs: readInt(env, 'OUTBOX_RELAY_RETRY_MAX_MS', 5 * 60_000),
+      webhookUrl: readUrl(env, 'EVENTS_WEBHOOK_URL'),
+    },
   };
 }

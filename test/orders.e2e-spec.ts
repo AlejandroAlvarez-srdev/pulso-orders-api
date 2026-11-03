@@ -63,7 +63,7 @@ describe('orders (e2e)', () => {
     describe('idempotency', () => {
       it('returns the same response for the same key and body, without creating twice', async () => {
         const key = newKey();
-        const eventsBefore = t.outbox.published().length;
+        const eventsBefore = t.outbox.stored().length;
 
         const first = await create(orderBody(), key).expect(201);
         const replay = await create(orderBody(), key).expect(201);
@@ -71,7 +71,7 @@ describe('orders (e2e)', () => {
         expect(replay.body).toEqual(first.body);
         expect(replay.headers['idempotency-replayed']).toBe('true');
         expect(replay.headers.location).toBe(first.headers.location);
-        expect(t.outbox.published()).toHaveLength(eventsBefore + 1);
+        expect(t.outbox.stored()).toHaveLength(eventsBefore + 1);
       });
 
       it('returns the original snapshot even after the order has moved on', async () => {
@@ -177,7 +177,7 @@ describe('orders (e2e)', () => {
 
       await transition(body.id, 'CANCELLED', 'Customer changed their mind').expect(200);
 
-      expect(t.outbox.published().at(-1)).toMatchObject({
+      expect(t.outbox.stored().at(-1)).toMatchObject({
         type: 'order.cancelled',
         aggregateId: body.id,
         payload: { previousStatus: 'PAYMENT_PENDING', reason: 'Customer changed their mind' },
