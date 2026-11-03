@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { type Clock } from '../common/clock';
+import { type AppConfig } from '../config/app-config';
 import {
   ConcurrentModificationError,
   IdempotencyKeyInFlightError,
@@ -23,7 +24,13 @@ class SteppingClock implements Clock {
     this.t += 1000;
     return new Date(this.t);
   }
+  advance(ms: number): void {
+    this.t += ms;
+  }
 }
+
+const TTL_SECONDS = 24 * 3600;
+const config = { idempotency: { ttlSeconds: TTL_SECONDS } } as AppConfig;
 
 const input = (overrides: Partial<NewOrderInput> = {}): NewOrderInput => ({
   pickup: { lat: 19.4326, lng: -99.1332, address: 'Farmacia Roma, Álvaro Obregón 120' },
@@ -39,8 +46,9 @@ function setup() {
   const idempotency = new InMemoryIdempotencyStore();
   const outbox = new InMemoryOutboxService();
   const uow = new InMemoryUnitOfWork(repo, outbox, idempotency);
-  const service = new OrdersService(repo, idempotency, uow, new SteppingClock());
-  return { repo, idempotency, outbox, uow, service };
+  const clock = new SteppingClock();
+  const service = new OrdersService(repo, idempotency, uow, clock, config);
+  return { repo, idempotency, outbox, uow, clock, service };
 }
 
 const merchant = randomUUID();
@@ -107,6 +115,20 @@ describe('OrdersService', () => {
       );
     });
 
+    it('forgets a key once its TTL has passed', async () => {
+      const { service, clock } = setup();
+      const first = await service.create(merchant, input(), 'key-1');
+      clock.advance((TTL_SECONDS - 10) * 1000);
+      const stillReplayed = await service.create(merchant, input(), 'key-1');
+      clock.advance(60_000);
+
+      const afterTtl = await service.create(merchant, input({ amountCents: 1 }), 'key-1');
+
+      expect(stillReplayed.replayed).toBe(true);
+      expect(afterTtl).toMatchObject({ replayed: false, statusCode: 201 });
+      expect(afterTtl.body.id).not.toBe(first.body.id);
+    });
+
     it('scopes keys per merchant', async () => {
       const { service } = setup();
 
@@ -160,7 +182,7 @@ describe('OrdersService', () => {
 
       expect((await repo.list({ merchantId: merchant, limit: 10 })).items).toHaveLength(0);
       expect(outbox.stored()).toHaveLength(0);
-      expect(await idempotency.reserve(merchant, 'key-1', 'probe', new Date())).toEqual({ reserved: true });
+      expect(await idempotency.reserve(merchant, 'key-1', 'probe', new Date(), new Date(0))).toEqual({ reserved: true });
     });
 
     it('lets the client retry the same key after an outbox failure', async () => {

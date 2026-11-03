@@ -59,6 +59,8 @@ model IdempotencyKey {
   createdAt      DateTime @map("created_at") @db.Timestamptz(3)
 
   @@id([merchantId, key])
+  // Cleanup job deletes by age.
+  @@index([createdAt])
   @@map("idempotency_keys")
 }
 

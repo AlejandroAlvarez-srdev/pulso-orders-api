@@ -20,10 +20,14 @@ export type ReserveResult = { reserved: true } | { reserved: false; existing: Id
 /**
  * Keys are scoped per merchant. `reserve` must be atomic: exactly one caller
  * wins a given (merchantId, key) pair, everyone else sees the existing record.
+ * Records created before `expiredBefore` no longer count: the key can be
+ * reserved again (this also frees keys left in flight by a crashed process).
  */
 export interface IdempotencyStore {
-  reserve(merchantId: string, key: string, requestHash: string, at: Date): Promise<ReserveResult>;
+  reserve(merchantId: string, key: string, requestHash: string, at: Date, expiredBefore: Date): Promise<ReserveResult>;
   complete(merchantId: string, key: string, response: StoredResponse): Promise<void>;
   /** Frees a reservation whose request failed so the client can retry with the same key. */
   release(merchantId: string, key: string): Promise<void>;
+  /** Deletes records created before `expiredBefore`; returns how many were removed. */
+  purgeExpired(expiredBefore: Date): Promise<number>;
 }

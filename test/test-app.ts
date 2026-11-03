@@ -22,6 +22,7 @@ export const testConfig: AppConfig = {
   persistence: 'memory',
   jwt: { secret: 'e2e-secret-that-is-long-enough-123456', issuer: 'pulso-orders-api-test', ttlSeconds: 300 },
   demoMerchantApiKey: DEMO_API_KEY,
+  idempotency: { ttlSeconds: 24 * 3600, cleanupEnabled: false, cleanupIntervalMs: 3600_000 },
   outboxRelay: { enabled: false, intervalMs: 1000, batchSize: 50, retryBaseMs: 1000, retryMaxMs: 60_000 },
 };
 

@@ -12,10 +12,16 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
     return `${merchantId}\u0000${key}`;
   }
 
-  async reserve(merchantId: string, key: string, requestHash: string, at: Date): Promise<ReserveResult> {
+  async reserve(
+    merchantId: string,
+    key: string,
+    requestHash: string,
+    at: Date,
+    expiredBefore: Date,
+  ): Promise<ReserveResult> {
     const id = InMemoryIdempotencyStore.id(merchantId, key);
     const existing = this.records.get(id);
-    if (existing) return { reserved: false, existing: structuredClone(existing) };
+    if (existing && existing.createdAt >= expiredBefore) return { reserved: false, existing: structuredClone(existing) };
     this.records.set(id, { merchantId, key, requestHash, response: null, createdAt: at });
     return { reserved: true };
   }
@@ -26,6 +32,17 @@ export class InMemoryIdempotencyStore implements IdempotencyStore {
 
   async release(merchantId: string, key: string): Promise<void> {
     this.records.delete(InMemoryIdempotencyStore.id(merchantId, key));
+  }
+
+  async purgeExpired(expiredBefore: Date): Promise<number> {
+    let removed = 0;
+    for (const [id, record] of this.records) {
+      if (record.createdAt < expiredBefore) {
+        this.records.delete(id);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   completeSync(merchantId: string, key: string, response: StoredResponse): void {

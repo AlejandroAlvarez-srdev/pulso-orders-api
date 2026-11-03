@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { canonicalHash } from '../common/canonical-hash';
 import { CLOCK, type Clock } from '../common/clock';
+import { APP_CONFIG, type AppConfig } from '../config/app-config';
 import {
   ConcurrentModificationError,
   IdempotencyKeyInFlightError,
@@ -42,6 +43,7 @@ export class OrdersService {
     @Inject(IDEMPOTENCY_STORE) private readonly idempotency: IdempotencyStore,
     @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
   /**
@@ -52,7 +54,8 @@ export class OrdersService {
   async create(merchantId: string, input: NewOrderInput, idempotencyKey: string): Promise<CreateOrderResult> {
     const now = this.clock.now();
     const requestHash = canonicalHash(input);
-    const reservation = await this.idempotency.reserve(merchantId, idempotencyKey, requestHash, now);
+    const expiredBefore = new Date(now.getTime() - this.config.idempotency.ttlSeconds * 1000);
+    const reservation = await this.idempotency.reserve(merchantId, idempotencyKey, requestHash, now, expiredBefore);
 
     if (!reservation.reserved) {
       const { existing } = reservation;

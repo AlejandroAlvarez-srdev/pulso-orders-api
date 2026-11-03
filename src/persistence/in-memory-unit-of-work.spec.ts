@@ -7,6 +7,7 @@ import { InMemoryOutboxService } from '../outbox/in-memory-outbox.service';
 import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 
 const at = new Date('2026-06-01T10:00:00Z');
+const EPOCH = new Date(0);
 
 const order = (): Order => ({
   id: randomUUID(),
@@ -72,7 +73,7 @@ describe('InMemoryUnitOfWork', () => {
 
   it('restores every adapter when a write fails during commit', async () => {
     const { uow, orders, outbox, idempotency } = setup();
-    await idempotency.reserve('m1', 'k', 'h', at);
+    await idempotency.reserve('m1', 'k', 'h', at, EPOCH);
     const o = order();
     jest.spyOn(outbox, 'appendSync').mockImplementationOnce(() => {
       throw new Error('outbox down');
@@ -87,7 +88,7 @@ describe('InMemoryUnitOfWork', () => {
     ).rejects.toThrow('outbox down');
 
     expect(await orders.findById(o.id)).toBeNull();
-    const probe = await idempotency.reserve('m1', 'k', 'h', at);
+    const probe = await idempotency.reserve('m1', 'k', 'h', at, EPOCH);
     expect(probe).toEqual({ reserved: false, existing: expect.objectContaining({ response: null }) });
   });
 

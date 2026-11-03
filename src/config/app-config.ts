@@ -11,6 +11,12 @@ export interface AppConfig {
   };
   /** API key of the demo merchant seeded by the in-memory driver. */
   demoMerchantApiKey: string;
+  idempotency: {
+    /** How long a key (and its stored response) stays valid. */
+    ttlSeconds: number;
+    cleanupEnabled: boolean;
+    cleanupIntervalMs: number;
+  };
   outboxRelay: {
     enabled: boolean;
     intervalMs: number;
@@ -86,6 +92,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ttlSeconds: readInt(env, 'JWT_TTL_SECONDS', 3600),
     },
     demoMerchantApiKey: env.DEMO_MERCHANT_API_KEY ?? 'pk_demo_pulso_merchant',
+    idempotency: {
+      ttlSeconds: readInt(env, 'IDEMPOTENCY_TTL_SECONDS', 24 * 3600),
+      cleanupEnabled: readBool(env, 'IDEMPOTENCY_CLEANUP_ENABLED', true),
+      cleanupIntervalMs: readInt(env, 'IDEMPOTENCY_CLEANUP_INTERVAL_MS', 3600_000),
+    },
     outboxRelay: {
       enabled: readBool(env, 'OUTBOX_RELAY_ENABLED', true),
       intervalMs: readInt(env, 'OUTBOX_RELAY_INTERVAL_MS', 1000),
