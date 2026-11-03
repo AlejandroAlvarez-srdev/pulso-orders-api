@@ -1,4 +1,9 @@
-# pulso-orders-api
+<p align="center"><img src="assets/banner.svg" alt="pulso-orders-api" width="100%"></p>
+
+<p align="center"><img src="https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS"> <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"> <img src="https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma"> <img src="https://img.shields.io/badge/Postgres-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres"> <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white" alt="Jest"> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"> <img src="https://img.shields.io/badge/22_commits-6a178c?style=for-the-badge" alt="22 commits"></p>
+
+<h1 align="center">pulso-orders-api</h1>
+<!-- /header -->
 
 Orders API for **Pulso**, an on-demand microtask marketplace in LatAm. Merchants publish orders
 (pick something up and deliver it, buy something in a store), independent workers ("pulsers")
@@ -16,6 +21,17 @@ with other services:
 - rate limiting, metrics and graceful shutdown
 
 > Pulso is a fictional company used to explore these patterns.
+
+## At a glance
+
+<table>
+  <tr>
+    <td align="center" width="25%"><b>182 (unit + e2e + contract)</b><br>Tests</td>
+    <td align="center" width="25%"><b>Atomic outbox in one transaction</b><br>Consistency</td>
+    <td align="center" width="25%"><b>Optimistic locking, ETag/If-Match</b><br>Concurrency</td>
+    <td align="center" width="25%"><b>Rate limits, /metrics, graceful drain</b><br>Ops</td>
+  </tr>
+</table>
 
 ## Architecture
 
