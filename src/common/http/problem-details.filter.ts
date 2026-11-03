@@ -22,6 +22,7 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       );
     }
 
+    if (problem.status === 401) res.setHeader('WWW-Authenticate', 'Bearer realm="pulso-orders"');
     res.status(problem.status).type(PROBLEM_CONTENT_TYPE).json(problem);
   }
 }

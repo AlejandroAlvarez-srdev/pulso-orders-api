@@ -12,7 +12,8 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports', disallowTypeAnnotations: false }],
+      // Not enabled on purpose: Nest DI reads constructor types from decorator
+      // metadata, so forcing `import type` would silently break injection.
       'no-console': 'error',
       eqeqeq: ['error', 'always'],
     },

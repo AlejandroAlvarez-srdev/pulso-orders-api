@@ -35,13 +35,6 @@ function fromStatus(status: number, detail?: string): ProblemDetails {
   return { type: PROBLEM_TYPE_BASE + slug(title), title, status, ...(detail ? { detail } : {}) };
 }
 
-/** Express/body-parser errors carry `status` and `expose` for client-safe 4xx failures. */
-function isExposedClientError(error: unknown): error is Error & { status: number; type?: string } {
-  if (!(error instanceof Error)) return false;
-  const { status, expose } = error as Error & { status?: unknown; expose?: unknown };
-  return typeof status === 'number' && status >= 400 && status < 500 && expose === true;
-}
-
 export function toProblem(error: unknown): ProblemDetails {
   if (error instanceof RequestValidationError) {
     return {
@@ -70,13 +63,6 @@ export function toProblem(error: unknown): ProblemDetails {
     const response = error.getResponse();
     const message = typeof response === 'string' ? response : (response as { message?: unknown }).message;
     return fromStatus(error.getStatus(), typeof message === 'string' ? message : error.message);
-  }
-
-  if (isExposedClientError(error)) {
-    if (error.type === 'entity.parse.failed') {
-      return { ...fromStatus(400, 'Request body is not valid JSON'), type: PROBLEM_TYPE_BASE + 'malformed-json' };
-    }
-    return fromStatus(error.status, error.message);
   }
 
   return fromStatus(500, 'An unexpected error occurred');
