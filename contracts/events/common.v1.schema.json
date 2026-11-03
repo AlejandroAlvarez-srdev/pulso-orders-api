@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pulso.example/events/common.v1.schema.json",
+  "title": "Shared Pulso definitions",
+  "$defs": {
+    "location": {
+      "type": "object",
+      "required": ["lat", "lng", "address"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 },
+        "address": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "item": {
+      "type": "object",
+      "required": ["sku", "name", "qty"],
+      "properties": {
+        "sku": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "qty": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "orderStatus": {
+      "enum": ["CREATED", "PAYMENT_PENDING", "PAID", "ASSIGNED", "IN_PROGRESS", "DELIVERED", "CANCELLED", "FAILED"]
+    }
+  }
+}

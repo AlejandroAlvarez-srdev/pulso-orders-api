@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pulso.example/events/envelope.v1.schema.json",
+  "title": "Pulso event envelope v1",
+  "description": "Every event published by pulso-orders-api. Consumers must deduplicate on `id` (delivery is at-least-once) and may receive events of one aggregate only in occurrence order.",
+  "type": "object",
+  "required": ["id", "type", "specVersion", "source", "aggregateId", "occurredAt", "data"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "description": "Unique event id; also sent as Idempotency-Key" },
+    "type": { "type": "string", "pattern": "^[a-z]+(\\.[a-z_]+)+$" },
+    "specVersion": { "const": "1.0" },
+    "source": { "const": "pulso-orders-api" },
+    "aggregateId": { "type": "string", "format": "uuid", "description": "The order id" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false
+}

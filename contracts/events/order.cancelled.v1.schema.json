@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.pulso.example/events/order.cancelled.v1.schema.json",
+  "title": "order.cancelled v1",
+  "description": "An order was cancelled. pulso-saga compensates: voids or refunds the payment and releases any assigned pulser.",
+  "type": "object",
+  "allOf": [{ "$ref": "envelope.v1.schema.json" }],
+  "properties": {
+    "type": { "const": "order.cancelled" },
+    "data": {
+      "type": "object",
+      "required": ["orderId", "merchantId", "previousStatus", "reason"],
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "merchantId": { "type": "string", "format": "uuid" },
+        "previousStatus": {
+          "description": "Status before cancelling; tells the saga which steps to compensate",
+          "enum": ["CREATED", "PAYMENT_PENDING", "PAID", "ASSIGNED"]
+        },
+        "reason": { "type": ["string", "null"], "maxLength": 500 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
