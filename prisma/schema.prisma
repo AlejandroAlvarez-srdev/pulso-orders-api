@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  CREATED
+  PAYMENT_PENDING
+  PAID
+  ASSIGNED
+  IN_PROGRESS
+  DELIVERED
+  CANCELLED
+  FAILED
+}
+
+model Merchant {
+  id         String   @id @db.Uuid
+  name       String
+  apiKeyHash String   @unique @map("api_key_hash") @db.Char(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  orders     Order[]
+
+  @@map("merchants")
+}
+
+model Order {
+  id          String      @id @db.Uuid
+  merchantId  String      @map("merchant_id") @db.Uuid
+  merchant    Merchant    @relation(fields: [merchantId], references: [id])
+  status      OrderStatus
+  pickup      Json
+  dropoff     Json
+  items       Json
+  amountCents Int         @map("amount_cents")
+  currency    String      @db.Char(3)
+  version     Int         @default(0)
+  createdAt   DateTime    @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @map("updated_at") @db.Timestamptz(3)
+
+  // Keyset pagination: (merchant, createdAt DESC, id DESC), optionally filtered by status.
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([merchantId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("orders")
+}
+
+model IdempotencyKey {
+  merchantId     String   @map("merchant_id") @db.Uuid
+  key            String   @db.VarChar(255)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @map("created_at") @db.Timestamptz(3)
+
+  @@id([merchantId, key])
+  @@map("idempotency_keys")
+}
+
+model OutboxEvent {
+  id          String    @id @db.Uuid
+  type        String    @db.VarChar(100)
+  aggregateId String    @map("aggregate_id") @db.Uuid
+  payload     Json
+  occurredAt  DateTime  @map("occurred_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  // Relay polls unpublished events in order.
+  @@index([publishedAt, occurredAt])
+  @@map("outbox_events")
+}
