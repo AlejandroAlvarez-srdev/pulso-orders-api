@@ -11,6 +11,12 @@ export interface AppConfig {
   };
   /** API key of the demo merchant seeded by the in-memory driver. */
   demoMerchantApiKey: string;
+  shutdown: {
+    /** Time readiness reports 503 before the server stops accepting connections. */
+    drainDelayMs: number;
+    /** Hard limit for the whole shutdown; the process exits with 1 when exceeded. */
+    timeoutMs: number;
+  };
   /** Express `trust proxy`: set when running behind a load balancer so req.ip is the client. */
   trustProxy: boolean;
   rateLimit: {
@@ -51,6 +57,10 @@ function readInt(env: NodeJS.ProcessEnv, key: string, fallback: number): number 
     throw new ConfigError(`${key} must be a positive integer, got "${raw}"`);
   }
   return value;
+}
+
+function readNonNegativeInt(env: NodeJS.ProcessEnv, key: string, fallback: number): number {
+  return env[key] === '0' ? 0 : readInt(env, key, fallback);
 }
 
 function readBool(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
@@ -101,6 +111,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ttlSeconds: readInt(env, 'JWT_TTL_SECONDS', 3600),
     },
     demoMerchantApiKey: env.DEMO_MERCHANT_API_KEY ?? 'pk_demo_pulso_merchant',
+    shutdown: {
+      drainDelayMs: readNonNegativeInt(env, 'SHUTDOWN_DRAIN_DELAY_MS', 5000),
+      timeoutMs: readInt(env, 'SHUTDOWN_TIMEOUT_MS', 25_000),
+    },
     trustProxy: readBool(env, 'TRUST_PROXY', false),
     rateLimit: {
       enabled: readBool(env, 'RATE_LIMIT_ENABLED', true),

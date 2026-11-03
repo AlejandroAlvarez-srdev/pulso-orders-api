@@ -40,6 +40,8 @@ services:
       JWT_ISSUER: pulso-orders-api
     ports:
       - "3000:3000"
+    # Longer than SHUTDOWN_TIMEOUT_MS (25 s) so Docker never SIGKILLs a draining instance.
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

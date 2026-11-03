@@ -1,9 +1,9 @@
-import { Injectable, type OnModuleDestroy } from '@nestjs/common';
+import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { type PersistenceHealth } from './persistence-health';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleDestroy, PersistenceHealth {
+export class PrismaService extends PrismaClient implements OnApplicationShutdown, PersistenceHealth {
   readonly driver = 'prisma';
 
   constructor(databaseUrl: string) {
@@ -19,7 +19,8 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy, Pers
     }
   }
 
-  async onModuleDestroy(): Promise<void> {
+  /** Last shutdown step, after the HTTP server has finished in-flight requests. */
+  async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();
   }
 }

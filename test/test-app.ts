@@ -22,6 +22,7 @@ export const testConfig: AppConfig = {
   persistence: 'memory',
   jwt: { secret: 'e2e-secret-that-is-long-enough-123456', issuer: 'pulso-orders-api-test', ttlSeconds: 300 },
   demoMerchantApiKey: DEMO_API_KEY,
+  shutdown: { drainDelayMs: 0, timeoutMs: 5000 },
   trustProxy: false,
   // Generous limits so functional suites never throttle; rate-limit.e2e-spec tightens them.
   rateLimit: {

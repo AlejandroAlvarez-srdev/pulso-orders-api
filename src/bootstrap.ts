@@ -18,7 +18,6 @@ export function configureApp(app: INestApplication, options: { trustProxy?: bool
   app.use(app.get(MetricsService).httpMiddleware());
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ProblemDetailsFilter());
-  app.enableShutdownHooks();
 
   const document = SwaggerModule.createDocument(
     app,

@@ -45,6 +45,12 @@ describe('loadConfig', () => {
     );
   });
 
+  it('allows disabling the shutdown drain delay', () => {
+    const config = loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: secret, SHUTDOWN_DRAIN_DELAY_MS: '0' });
+
+    expect(config.shutdown).toEqual({ drainDelayMs: 0, timeoutMs: 25_000 });
+  });
+
   it('rejects non-numeric ports', () => {
     expect(() => loadConfig({ PERSISTENCE: 'memory', JWT_SECRET: secret, PORT: 'abc' })).toThrow(/PORT/);
   });

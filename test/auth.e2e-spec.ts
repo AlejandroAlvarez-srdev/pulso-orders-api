@@ -12,10 +12,10 @@ describe('auth, health and platform (e2e)', () => {
     await t.app.close();
   });
 
-  it('GET /health is public', async () => {
-    const res = await t.http().get('/health').expect(200);
+  it('GET /health/ready is public', async () => {
+    const res = await t.http().get('/health/ready').expect(200);
 
-    expect(res.body).toEqual({ status: 'ok', persistence: { driver: 'memory', healthy: true } });
+    expect(res.body).toEqual({ status: 'ready', persistence: { driver: 'memory', healthy: true } });
   });
 
   it('exchanges an API key for a bearer token', async () => {
@@ -94,7 +94,7 @@ describe('auth, health and platform (e2e)', () => {
   });
 
   it('propagates a caller X-Request-Id and generates one otherwise', async () => {
-    const propagated = await t.http().get('/health').set('X-Request-Id', 'req-abc.123');
+    const propagated = await t.http().get('/health/ready').set('X-Request-Id', 'req-abc.123');
     const generated = await t.http().get('/orders');
 
     expect(propagated.headers['x-request-id']).toBe('req-abc.123');
@@ -103,7 +103,7 @@ describe('auth, health and platform (e2e)', () => {
   });
 
   it('ignores unsafe X-Request-Id values', async () => {
-    const res = await t.http().get('/health').set('X-Request-Id', 'bad id with spaces');
+    const res = await t.http().get('/health/ready').set('X-Request-Id', 'bad id with spaces');
 
     expect(res.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
   });
@@ -126,7 +126,7 @@ describe('auth, health and platform (e2e)', () => {
 
     expect(res.body.info.title).toBe('Pulso Orders API');
     expect(Object.keys(res.body.paths)).toEqual(
-      expect.arrayContaining(['/orders', '/orders/{id}', '/orders/{id}/transitions', '/auth/token', '/health']),
+      expect.arrayContaining(['/orders', '/orders/{id}', '/orders/{id}/transitions', '/auth/token', '/health/live', '/health/ready']),
     );
   });
 });

@@ -56,6 +56,6 @@ describe('rate limiting (e2e)', () => {
   });
 
   it('never throttles health checks', async () => {
-    for (let i = 0; i < 10; i++) await t.http().get('/health').expect(200);
+    for (let i = 0; i < 10; i++) await t.http().get('/health/ready').expect(200);
   });
 });
