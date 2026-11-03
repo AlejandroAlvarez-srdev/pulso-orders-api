@@ -27,6 +27,9 @@ jobs:
       # postinstall generates the Prisma client; no database is needed.
       - run: npm ci
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
       - run: npm run lint
 
       - run: npm run typecheck
