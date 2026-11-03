@@ -1,5 +1,4 @@
 import { type Order as OrderRow, type Prisma } from '@prisma/client';
-import { type PrismaService } from '../persistence/prisma.service';
 import { type Currency, type Location, type Order, type OrderItem, type OrderStatus } from './domain/order';
 import { type ListOrdersQuery, type OrdersPage, type OrdersRepository } from './orders.repository';
 
@@ -20,7 +19,8 @@ function toDomain(row: OrderRow): Order {
 }
 
 export class PrismaOrdersRepository implements OrdersRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  /** Accepts the root client or an interactive-transaction client. */
+  constructor(private readonly prisma: Prisma.TransactionClient) {}
 
   async insert(order: Order): Promise<void> {
     await this.prisma.order.create({

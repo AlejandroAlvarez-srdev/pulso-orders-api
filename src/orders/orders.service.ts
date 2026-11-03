@@ -9,7 +9,7 @@ import {
   NotFoundError,
 } from '../common/domain-errors';
 import { IDEMPOTENCY_STORE, type IdempotencyStore } from '../idempotency/idempotency.store';
-import { OUTBOX_SERVICE, type OutboxService } from '../outbox/outbox.service';
+import { UNIT_OF_WORK, type UnitOfWork } from '../persistence/unit-of-work';
 import { decodeCursor, encodeCursor } from './domain/cursor';
 import { type NewOrderInput, type Order, OrderStatus } from './domain/order';
 import { assertTransition } from './domain/order-state-machine';
@@ -40,7 +40,7 @@ export class OrdersService {
   constructor(
     @Inject(ORDERS_REPOSITORY) private readonly orders: OrdersRepository,
     @Inject(IDEMPOTENCY_STORE) private readonly idempotency: IdempotencyStore,
-    @Inject(OUTBOX_SERVICE) private readonly outbox: OutboxService,
+    @Inject(UNIT_OF_WORK) private readonly uow: UnitOfWork,
     @Inject(CLOCK) private readonly clock: Clock,
   ) {}
 
@@ -85,14 +85,17 @@ export class OrdersService {
         updatedAt: now,
         version: 0,
       };
-      await this.orders.insert(order);
-      await this.outbox.publish(orderCreated(order));
-
+      // One transaction: the order, its order.created outbox row and the stored
+      // response either all exist or none do.
       const result = { statusCode: 201, body: toOrderResponse(order) };
-      await this.idempotency.complete(merchantId, idempotencyKey, result);
+      await this.uow.run(async (tx) => {
+        await tx.orders.insert(order);
+        await tx.outbox.publish(orderCreated(order));
+        await tx.idempotency.complete(merchantId, idempotencyKey, result);
+      });
       return { ...result, replayed: false };
     } catch (error) {
-      // Let the client retry with the same key instead of locking it forever.
+      // Nothing was committed: free the key so the client can retry with it.
       await this.idempotency.release(merchantId, idempotencyKey);
       throw error;
     }
@@ -119,14 +122,15 @@ export class OrdersService {
     const current = await this.get(merchantId, orderId);
     assertTransition(current.status, to);
 
-    const updated = await this.orders.updateStatus(orderId, current.version, to, this.clock.now());
-    if (!updated) {
-      throw new ConcurrentModificationError(`Order ${orderId} changed while transitioning to ${to}; reload and retry`);
-    }
-
-    if (to === OrderStatus.CANCELLED) {
-      await this.outbox.publish(orderCancelled(updated, current.status, reason));
-    }
-    return updated;
+    return this.uow.run(async (tx) => {
+      const updated = await tx.orders.updateStatus(orderId, current.version, to, this.clock.now());
+      if (!updated) {
+        throw new ConcurrentModificationError(`Order ${orderId} changed while transitioning to ${to}; reload and retry`);
+      }
+      if (to === OrderStatus.CANCELLED) {
+        await tx.outbox.publish(orderCancelled(updated, current.status, reason));
+      }
+      return updated;
+    });
   }
 }

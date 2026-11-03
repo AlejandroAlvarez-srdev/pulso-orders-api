@@ -1,5 +1,4 @@
 import { Prisma, type IdempotencyKey } from '@prisma/client';
-import { type PrismaService } from '../persistence/prisma.service';
 import {
   type IdempotencyRecord,
   type IdempotencyStore,
@@ -24,7 +23,8 @@ function toRecord(row: IdempotencyKey): IdempotencyRecord {
 
 /** Atomicity comes from the (merchant_id, key) primary key: the INSERT either wins or conflicts. */
 export class PrismaIdempotencyStore implements IdempotencyStore {
-  constructor(private readonly prisma: PrismaService) {}
+  /** Accepts the root client or an interactive-transaction client. */
+  constructor(private readonly prisma: Prisma.TransactionClient) {}
 
   async reserve(merchantId: string, key: string, requestHash: string, at: Date): Promise<ReserveResult> {
     try {

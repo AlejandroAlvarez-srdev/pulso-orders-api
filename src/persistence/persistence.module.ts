@@ -11,25 +11,31 @@ import { InMemoryOrdersRepository } from '../orders/in-memory-orders.repository'
 import { ORDERS_REPOSITORY } from '../orders/orders.repository';
 import { PrismaOrdersRepository } from '../orders/prisma-orders.repository';
 import { InMemoryOutboxService } from '../outbox/in-memory-outbox.service';
-import { OUTBOX_SERVICE } from '../outbox/outbox.service';
-import { PrismaOutboxService } from '../outbox/prisma-outbox.service';
+import { InMemoryUnitOfWork } from './in-memory-unit-of-work';
 import { PERSISTENCE_HEALTH, type PersistenceHealth } from './persistence-health';
+import { PrismaUnitOfWork } from './prisma-unit-of-work';
 import { PrismaService } from './prisma.service';
+import { UNIT_OF_WORK } from './unit-of-work';
 
-const PORTS = [ORDERS_REPOSITORY, MERCHANTS_REPOSITORY, IDEMPOTENCY_STORE, OUTBOX_SERVICE, PERSISTENCE_HEALTH];
+const PORTS = [ORDERS_REPOSITORY, MERCHANTS_REPOSITORY, IDEMPOTENCY_STORE, UNIT_OF_WORK, PERSISTENCE_HEALTH];
 
 function inMemoryProviders(config: AppConfig): Provider[] {
+  const orders = new InMemoryOrdersRepository();
+  const idempotency = new InMemoryIdempotencyStore();
+  const outbox = new InMemoryOutboxService();
   const health: PersistenceHealth = { driver: 'memory', isHealthy: async () => true };
   return [
-    { provide: ORDERS_REPOSITORY, useValue: new InMemoryOrdersRepository() },
+    { provide: ORDERS_REPOSITORY, useValue: orders },
     {
       provide: MERCHANTS_REPOSITORY,
       useValue: new InMemoryMerchantsRepository([
         { ...DEMO_MERCHANT, apiKeyHash: hashApiKey(config.demoMerchantApiKey), createdAt: new Date() },
       ]),
     },
-    { provide: IDEMPOTENCY_STORE, useValue: new InMemoryIdempotencyStore() },
-    { provide: OUTBOX_SERVICE, useValue: new InMemoryOutboxService() },
+    { provide: IDEMPOTENCY_STORE, useValue: idempotency },
+    { provide: UNIT_OF_WORK, useValue: new InMemoryUnitOfWork(orders, outbox, idempotency) },
+    // Exposed by class so tests can inspect what a relay would publish.
+    { provide: InMemoryOutboxService, useValue: outbox },
     { provide: PERSISTENCE_HEALTH, useValue: health },
   ];
 }
@@ -41,7 +47,7 @@ function prismaProviders(config: AppConfig): Provider[] {
     { provide: ORDERS_REPOSITORY, useFactory: (p: PrismaService) => new PrismaOrdersRepository(p), inject },
     { provide: MERCHANTS_REPOSITORY, useFactory: (p: PrismaService) => new PrismaMerchantsRepository(p), inject },
     { provide: IDEMPOTENCY_STORE, useFactory: (p: PrismaService) => new PrismaIdempotencyStore(p), inject },
-    { provide: OUTBOX_SERVICE, useFactory: (p: PrismaService) => new PrismaOutboxService(p), inject },
+    { provide: UNIT_OF_WORK, useFactory: (p: PrismaService) => new PrismaUnitOfWork(p), inject },
     { provide: PERSISTENCE_HEALTH, useExisting: PrismaService },
   ];
 }
@@ -53,11 +59,12 @@ function prismaProviders(config: AppConfig): Provider[] {
 @Module({})
 export class PersistenceModule {
   static register(config: AppConfig): DynamicModule {
+    const memory = config.persistence === 'memory';
     return {
       module: PersistenceModule,
       global: true,
-      providers: config.persistence === 'prisma' ? prismaProviders(config) : inMemoryProviders(config),
-      exports: PORTS,
+      providers: memory ? inMemoryProviders(config) : prismaProviders(config),
+      exports: memory ? [...PORTS, InMemoryOutboxService] : PORTS,
     };
   }
 }

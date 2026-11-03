@@ -21,7 +21,10 @@ flowchart LR
   svc --> sm[Order state machine<br/>transitions table]
   svc -->|ORDERS_REPOSITORY| repo[(Orders repository)]
   svc -->|IDEMPOTENCY_STORE| idem[(Idempotency store)]
-  svc -->|OUTBOX_SERVICE| outbox[(Outbox)]
+  svc -->|UNIT_OF_WORK| uow{{One transaction}}
+  uow --> repo
+  uow --> idem
+  uow --> outbox[(Outbox)]
   outbox -.->|order.created<br/>order.cancelled| saga[pulso-saga]
 
   subgraph adapters [Adapters, chosen by PERSISTENCE]
@@ -62,7 +65,7 @@ src/
   auth/          POST /auth/token, global JWT guard, scopes
   idempotency/   IdempotencyStore port + adapters
   outbox/        domain events, OutboxService port + adapters
-  persistence/   PersistenceModule (DI token swap), PrismaService
+  persistence/   PersistenceModule (DI token swap), UnitOfWork port + adapters, PrismaService
   health/        GET /health
   common/        domain errors, problem+json filter, request-id middleware, validation
 prisma/          schema.prisma, committed migrations, seed.sql
@@ -100,13 +103,29 @@ Every error is `application/problem+json` (RFC 9457) and carries the request id:
 
 Validation failures add an `errors` array with dotted field paths (`items.0.qty`, `pickup.lat`).
 
-## Domain events
+## Domain events and the transactional outbox
 
-`order.created` and `order.cancelled` are written through the `OutboxService` port. The Prisma
-adapter appends them to `outbox_events` (`published_at` is null until a relay delivers them);
-the in-memory adapter keeps them in a list that tests assert on. **These events are consumed by
-`pulso-saga`**, which orchestrates payment authorization and pulser assignment and drives the
-order forward through `POST /orders/:id/transitions`.
+`order.created` and `order.cancelled` are never sent to a broker from the request path. They are
+written to `outbox_events` **in the same database transaction** as the state change that caused
+them, through a `UnitOfWork` port:
+
+| Use case | Inside one transaction |
+| --- | --- |
+| `POST /orders` | insert `orders` row + insert `order.created` outbox row + store the idempotent response |
+| `POST /orders/:id/transitions` to `CANCELLED` | `UPDATE orders ... WHERE version = $n` + insert `order.cancelled` outbox row |
+
+The Prisma adapter (`PrismaUnitOfWork`) runs the work in one interactive `prisma.$transaction` and
+hands the repositories the transaction client, so either every row commits or none does. The
+in-memory adapter (`InMemoryUnitOfWork`) gives the same all-or-nothing guarantee: writes are
+staged while the work runs, applied synchronously at commit, and rolled back to a snapshot if any
+write fails. The idempotency key is *reserved* outside the transaction (it must be visible to
+concurrent retries) and released if the transaction does not commit, so a failed request can be
+retried with the same key.
+
+A separate relay process reads unpublished outbox rows, delivers them to the broker and marks them
+`published_at`. Delivery is therefore at-least-once; consumers deduplicate on the event `id`.
+**These events are consumed by `pulso-saga`**, which orchestrates payment authorization and pulser
+assignment and drives the order forward through `POST /orders/:id/transitions`.
 
 ## Design decisions and trade-offs
 
@@ -129,10 +148,12 @@ order forward through `POST /orders/:id/transitions`.
   the key is released so the client can retry. Response bodies are stored as `TEXT`, not `JSONB`,
   because JSONB reorders object keys. Keys never expire here; a production deployment would add a
   TTL sweep (24 h is typical).
-- **Outbox atomicity.** The order insert, outbox append and idempotency completion are separate
-  writes. A crash between them can leave an order without its `order.created` row. Closing that
-  gap means sharing one Prisma transaction across the three ports (a unit-of-work); it was left
-  out to keep the ports simple, and it is the first thing to add before running this for real.
+- **Outbox atomicity over dual writes.** Publishing to a broker after committing (or before) loses
+  or invents events when the process dies in between. Writing the event row in the same
+  transaction as the state change, and relaying it afterwards, trades a little latency and
+  at-least-once delivery for never having an order without its event (or the reverse). This was
+  verified against PostgreSQL by making the `outbox_events` insert fail: the request returned 500,
+  no order row existed, the key was free, and the retry succeeded.
 - **Keyset pagination on `(created_at DESC, id DESC)`** with an opaque base64url cursor. It stays
   stable while new orders arrive and uses the composite indexes in the migration instead of
   `OFFSET`. Tampered cursors are a `400 invalid-cursor`.
@@ -208,8 +229,9 @@ npm run test:cov
 ```
 
 - **Unit** (`src/**/*.spec.ts`): state machine graph, cursor codec, in-memory adapters, auth
-  service, problem mapping and `OrdersService` (idempotent replays, key reuse, in-flight keys,
-  key release on failure, events, concurrent transitions, pagination).
+  service, problem mapping, the in-memory unit of work (staging, rollback, commit-time version
+  check) and `OrdersService` (idempotent replays, key reuse, in-flight keys, events, concurrent
+  transitions, pagination, and atomicity: an outbox failure leaves no order and frees the key).
 - **E2E** (`test/*.e2e-spec.ts`): the real `AppModule` and HTTP pipeline over supertest: token
   and scope enforcement, forged/expired tokens, request ids, validation errors, idempotency,
   409 invalid transitions, tenant isolation, cursor pagination and the OpenAPI document.
@@ -226,7 +248,7 @@ and checks that it runs as a non-root user.
 - Keyset (cursor) pagination, optimistic concurrency and multi-tenant isolation
 - JWT bearer auth with scopes and a global guard
 - RFC 9457 problem details, request-id correlation and structured logging
-- Transactional-outbox-style event publication for a downstream saga
+- A transactional outbox with an explicit unit-of-work boundary, for a downstream saga
 - Fast, database-free unit and e2e tests; multi-stage non-root Docker image; CI
 
 ## License

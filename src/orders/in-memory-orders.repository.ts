@@ -7,11 +7,10 @@ const byNewest = (a: Order, b: Order): number =>
 
 /** Process-local adapter used by tests and the zero-dependency dev mode. */
 export class InMemoryOrdersRepository implements OrdersRepository {
-  private readonly orders = new Map<string, Order>();
+  private orders = new Map<string, Order>();
 
   async insert(order: Order): Promise<void> {
-    if (this.orders.has(order.id)) throw new Error(`Order ${order.id} already exists`);
-    this.orders.set(order.id, structuredClone(order));
+    this.insertSync(order);
   }
 
   async findById(id: string): Promise<Order | null> {
@@ -34,10 +33,29 @@ export class InMemoryOrdersRepository implements OrdersRepository {
   }
 
   async updateStatus(id: string, expectedVersion: number, status: OrderStatus, at: Date): Promise<Order | null> {
+    return this.updateStatusSync(id, expectedVersion, status, at);
+  }
+
+  // Synchronous primitives used by InMemoryUnitOfWork to commit without interleaving.
+
+  insertSync(order: Order): void {
+    if (this.orders.has(order.id)) throw new Error(`Order ${order.id} already exists`);
+    this.orders.set(order.id, structuredClone(order));
+  }
+
+  updateStatusSync(id: string, expectedVersion: number, status: OrderStatus, at: Date): Order | null {
     const current = this.orders.get(id);
     if (!current || current.version !== expectedVersion) return null;
     const updated: Order = { ...current, status, updatedAt: at, version: current.version + 1 };
     this.orders.set(id, updated);
     return structuredClone(updated);
+  }
+
+  /** Captures the current state; calling the returned function restores it. */
+  snapshot(): () => void {
+    const saved = new Map(this.orders);
+    return () => {
+      this.orders = saved;
+    };
   }
 }

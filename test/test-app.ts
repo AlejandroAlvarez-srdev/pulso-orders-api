@@ -9,8 +9,7 @@ import { type AppConfig } from '../src/config/app-config';
 import { InMemoryMerchantsRepository } from '../src/merchants/in-memory-merchants.repository';
 import { DEMO_MERCHANT, hashApiKey } from '../src/merchants/merchant';
 import { MERCHANTS_REPOSITORY } from '../src/merchants/merchants.repository';
-import { type InMemoryOutboxService } from '../src/outbox/in-memory-outbox.service';
-import { OUTBOX_SERVICE } from '../src/outbox/outbox.service';
+import { InMemoryOutboxService } from '../src/outbox/in-memory-outbox.service';
 
 export const DEMO_API_KEY = 'pk_test_demo_merchant';
 export const OTHER_API_KEY = 'pk_test_other_merchant';
@@ -48,7 +47,7 @@ export async function createTestApp(): Promise<TestApp> {
   const http = () => request(app.getHttpServer());
   return {
     app,
-    outbox: moduleRef.get<InMemoryOutboxService>(OUTBOX_SERVICE),
+    outbox: moduleRef.get(InMemoryOutboxService),
     http,
     token: async (apiKey = DEMO_API_KEY, scopes?: string[]) => {
       const res = await http().post('/auth/token').send({ apiKey, scopes }).expect(200);

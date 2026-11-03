@@ -1,11 +1,11 @@
 import { type Prisma } from '@prisma/client';
-import { type PrismaService } from '../persistence/prisma.service';
 import { type DomainEvent } from './domain-event';
 import { type OutboxService } from './outbox.service';
 
 /** Appends events to `outbox_events`; a relay marks them `published_at` once delivered. */
 export class PrismaOutboxService implements OutboxService {
-  constructor(private readonly prisma: PrismaService) {}
+  /** Accepts the root client or an interactive-transaction client. */
+  constructor(private readonly prisma: Prisma.TransactionClient) {}
 
   async publish(event: DomainEvent): Promise<void> {
     await this.prisma.outboxEvent.create({

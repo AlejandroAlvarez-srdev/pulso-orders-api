@@ -10,6 +10,7 @@ import {
 } from '../common/domain-errors';
 import { InMemoryIdempotencyStore } from '../idempotency/in-memory-idempotency.store';
 import { InMemoryOutboxService } from '../outbox/in-memory-outbox.service';
+import { InMemoryUnitOfWork } from '../persistence/in-memory-unit-of-work';
 import { type NewOrderInput, OrderStatus } from './domain/order';
 import { InMemoryOrdersRepository } from './in-memory-orders.repository';
 import { OrdersService } from './orders.service';
@@ -37,8 +38,9 @@ function setup() {
   const repo = new InMemoryOrdersRepository();
   const idempotency = new InMemoryIdempotencyStore();
   const outbox = new InMemoryOutboxService();
-  const service = new OrdersService(repo, idempotency, outbox, new SteppingClock());
-  return { repo, idempotency, outbox, service };
+  const uow = new InMemoryUnitOfWork(repo, outbox, idempotency);
+  const service = new OrdersService(repo, idempotency, uow, new SteppingClock());
+  return { repo, idempotency, outbox, uow, service };
 }
 
 const merchant = randomUUID();
@@ -116,9 +118,14 @@ describe('OrdersService', () => {
     });
 
     it('reports in-flight when the same body is retried before completion', async () => {
-      const { service, repo } = setup();
+      const { service, uow } = setup();
       let release!: () => void;
-      jest.spyOn(repo, 'insert').mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
+      const gate = new Promise<void>((r) => (release = r));
+      const run = uow.run.bind(uow);
+      jest.spyOn(uow, 'run').mockImplementationOnce(async (work) => {
+        await gate;
+        return run(work);
+      });
 
       const first = service.create(merchant, input(), 'key-1');
       await new Promise((r) => setImmediate(r));
@@ -130,13 +137,69 @@ describe('OrdersService', () => {
 
     it('releases the key when creation fails so the client can retry', async () => {
       const { service, repo, outbox } = setup();
-      jest.spyOn(repo, 'insert').mockRejectedValueOnce(new Error('db down'));
+      jest.spyOn(repo, 'insertSync').mockImplementationOnce(() => {
+        throw new Error('db down');
+      });
 
       await expect(service.create(merchant, input(), 'key-1')).rejects.toThrow('db down');
       const retry = await service.create(merchant, input(), 'key-1');
 
       expect(retry).toMatchObject({ statusCode: 201, replayed: false });
       expect(outbox.published()).toHaveLength(1);
+    });
+  });
+
+  describe('atomicity (transactional outbox)', () => {
+    it('persists no order and releases the key when the outbox write fails', async () => {
+      const { service, repo, outbox, idempotency } = setup();
+      jest.spyOn(outbox, 'appendSync').mockImplementationOnce(() => {
+        throw new Error('outbox unavailable');
+      });
+
+      await expect(service.create(merchant, input(), 'key-1')).rejects.toThrow('outbox unavailable');
+
+      expect((await repo.list({ merchantId: merchant, limit: 10 })).items).toHaveLength(0);
+      expect(outbox.published()).toHaveLength(0);
+      expect(await idempotency.reserve(merchant, 'key-1', 'probe', new Date())).toEqual({ reserved: true });
+    });
+
+    it('lets the client retry the same key after an outbox failure', async () => {
+      const { service, repo, outbox } = setup();
+      jest.spyOn(outbox, 'appendSync').mockImplementationOnce(() => {
+        throw new Error('outbox unavailable');
+      });
+      await expect(service.create(merchant, input(), 'key-1')).rejects.toThrow();
+
+      const retry = await service.create(merchant, input(), 'key-1');
+
+      expect(retry).toMatchObject({ statusCode: 201, replayed: false });
+      expect((await repo.list({ merchantId: merchant, limit: 10 })).items.map((o) => o.id)).toEqual([retry.body.id]);
+      expect(outbox.published()).toEqual([expect.objectContaining({ type: 'order.created', aggregateId: retry.body.id })]);
+    });
+
+    it('does not complete the idempotency key when the transaction rolls back', async () => {
+      const { service, idempotency, outbox } = setup();
+      const complete = jest.spyOn(idempotency, 'completeSync');
+      jest.spyOn(outbox, 'appendSync').mockImplementationOnce(() => {
+        throw new Error('outbox unavailable');
+      });
+
+      await expect(service.create(merchant, input(), 'key-1')).rejects.toThrow();
+
+      expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps the order status when the order.cancelled event cannot be stored', async () => {
+      const { service, repo, outbox } = setup();
+      const id = await createAt(service, S.PAID);
+      jest.spyOn(outbox, 'appendSync').mockImplementationOnce(() => {
+        throw new Error('outbox unavailable');
+      });
+
+      await expect(service.transition(merchant, id, S.CANCELLED, 'x')).rejects.toThrow('outbox unavailable');
+
+      expect(await repo.findById(id)).toMatchObject({ status: S.PAID, version: 2 });
+      expect(outbox.published().map((e) => e.type)).toEqual(['order.created']);
     });
   });
 
