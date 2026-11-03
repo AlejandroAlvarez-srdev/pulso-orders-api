@@ -8,6 +8,8 @@ import {
   IdempotencyKeyInFlightError,
   IdempotencyKeyReusedError,
   NotFoundError,
+  OrderNotEditableError,
+  PreconditionFailedError,
 } from '../common/domain-errors';
 import { MetricsService } from '../metrics/metrics.service';
 import { IDEMPOTENCY_STORE, type IdempotencyStore } from '../idempotency/idempotency.store';
@@ -17,7 +19,7 @@ import { type NewOrderInput, type Order, OrderStatus } from './domain/order';
 import { assertTransition } from './domain/order-state-machine';
 import { DEFAULT_PAGE_SIZE, type OrderResponseDto, toOrderResponse } from './dto/order.dto';
 import { orderCancelled, orderCreated } from './order-events';
-import { ORDERS_REPOSITORY, type OrdersRepository } from './orders.repository';
+import { type OrderDetailsChange, ORDERS_REPOSITORY, type OrdersRepository } from './orders.repository';
 
 export interface CreateOrderResult {
   statusCode: number;
@@ -125,21 +127,72 @@ export class OrdersService {
     return { items: page.items, nextCursor: page.nextCursor ? encodeCursor(page.nextCursor) : null };
   }
 
-  async transition(merchantId: string, orderId: string, to: OrderStatus, reason?: string): Promise<Order> {
+  /**
+   * @param expectedVersion from the client's If-Match. When given, any version
+   * mismatch (stale read or lost race) is a 412 instead of a 409.
+   */
+  async transition(
+    merchantId: string,
+    orderId: string,
+    to: OrderStatus,
+    reason?: string,
+    expectedVersion?: number,
+  ): Promise<Order> {
     const current = await this.get(merchantId, orderId);
+    this.checkPrecondition(current, expectedVersion);
     assertTransition(current.status, to);
 
     const updated = await this.uow.run(async (tx) => {
       const changed = await tx.orders.updateStatus(orderId, current.version, to, this.clock.now());
       if (!changed) {
+        if (expectedVersion !== undefined) throw new PreconditionFailedError(`Order ${orderId} has changed`);
         throw new ConcurrentModificationError(`Order ${orderId} changed while transitioning to ${to}; reload and retry`);
       }
       if (to === OrderStatus.CANCELLED) {
         await tx.outbox.publish(orderCancelled(changed, current.status, reason));
       }
       return changed;
+    }).catch((error: unknown) => {
+      // A conflict detected at commit time is the same lost race as a version miss above.
+      if (error instanceof ConcurrentModificationError && expectedVersion !== undefined) {
+        throw new PreconditionFailedError(`Order ${orderId} has changed`);
+      }
+      throw error;
     });
     this.metrics.orderTransitions.inc({ from: current.status, to });
     return updated;
+  }
+
+  /**
+   * Edits the drop-off, items or amount while the order is still CREATED
+   * (before payment). Always conditional: the caller must prove it saw the
+   * current version, so two dashboards cannot silently overwrite each other.
+   */
+  async updateDetails(
+    merchantId: string,
+    orderId: string,
+    change: OrderDetailsChange,
+    expectedVersion: number,
+  ): Promise<Order> {
+    const current = await this.get(merchantId, orderId);
+    this.checkPrecondition(current, expectedVersion);
+    if (current.status !== OrderStatus.CREATED) {
+      throw new OrderNotEditableError(`Order ${orderId} is ${current.status}; only CREATED orders can be edited`);
+    }
+    // Copy only the fields that were sent: DTO instances carry explicit `undefined`s.
+    const patch: OrderDetailsChange = {
+      ...(change.dropoff ? { dropoff: { ...change.dropoff } } : {}),
+      ...(change.items ? { items: change.items.map((item) => ({ ...item })) } : {}),
+      ...(change.amountCents !== undefined ? { amountCents: change.amountCents } : {}),
+    };
+    const updated = await this.orders.updateDetails(orderId, expectedVersion, patch, this.clock.now());
+    if (!updated) throw new PreconditionFailedError(`Order ${orderId} has changed`);
+    return updated;
+  }
+
+  private checkPrecondition(order: Order, expectedVersion: number | undefined): void {
+    if (expectedVersion !== undefined && order.version !== expectedVersion) {
+      throw new PreconditionFailedError(`Order ${order.id} is at version ${order.version}, not ${expectedVersion}`);
+    }
   }
 }

@@ -70,3 +70,21 @@ export class RateLimitedError extends DomainError {
     super(`Rate limit exceeded; retry in ${retryAfterSeconds}s`);
   }
 }
+
+export class PreconditionFailedError extends DomainError {
+  readonly status = 412;
+  readonly code = 'precondition-failed';
+  readonly title = 'The resource changed since the given ETag';
+}
+
+export class PreconditionRequiredError extends DomainError {
+  readonly status = 428;
+  readonly code = 'precondition-required';
+  readonly title = 'This request must be conditional (If-Match)';
+}
+
+export class OrderNotEditableError extends DomainError {
+  readonly status = 409;
+  readonly code = 'order-not-editable';
+  readonly title = 'The order can no longer be edited';
+}

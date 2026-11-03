@@ -1,6 +1,11 @@
 import { type OrderCursor, isAfterCursor } from './domain/cursor';
 import { type Order, type OrderStatus } from './domain/order';
-import { type ListOrdersQuery, type OrdersPage, type OrdersRepository } from './orders.repository';
+import {
+  type ListOrdersQuery,
+  type OrderDetailsChange,
+  type OrdersPage,
+  type OrdersRepository,
+} from './orders.repository';
 
 const byNewest = (a: Order, b: Order): number =>
   b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
@@ -36,6 +41,15 @@ export class InMemoryOrdersRepository implements OrdersRepository {
     return this.updateStatusSync(id, expectedVersion, status, at);
   }
 
+  async updateDetails(
+    id: string,
+    expectedVersion: number,
+    change: OrderDetailsChange,
+    at: Date,
+  ): Promise<Order | null> {
+    return this.updateDetailsSync(id, expectedVersion, change, at);
+  }
+
   async countByStatus(): Promise<Partial<Record<OrderStatus, number>>> {
     const counts: Partial<Record<OrderStatus, number>> = {};
     for (const order of this.orders.values()) counts[order.status] = (counts[order.status] ?? 0) + 1;
@@ -53,6 +67,14 @@ export class InMemoryOrdersRepository implements OrdersRepository {
     const current = this.orders.get(id);
     if (!current || current.version !== expectedVersion) return null;
     const updated: Order = { ...current, status, updatedAt: at, version: current.version + 1 };
+    this.orders.set(id, updated);
+    return structuredClone(updated);
+  }
+
+  updateDetailsSync(id: string, expectedVersion: number, change: OrderDetailsChange, at: Date): Order | null {
+    const current = this.orders.get(id);
+    if (!current || current.version !== expectedVersion) return null;
+    const updated: Order = { ...current, ...structuredClone(change), updatedAt: at, version: current.version + 1 };
     this.orders.set(id, updated);
     return structuredClone(updated);
   }

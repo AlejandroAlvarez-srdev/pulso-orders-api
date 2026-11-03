@@ -8,6 +8,8 @@ import {
   InvalidCursorError,
   InvalidTransitionError,
   NotFoundError,
+  OrderNotEditableError,
+  PreconditionFailedError,
 } from '../common/domain-errors';
 import { MetricsService } from '../metrics/metrics.service';
 import { InMemoryIdempotencyStore } from '../idempotency/in-memory-idempotency.store';
@@ -298,6 +300,61 @@ describe('OrdersService', () => {
       const id = await createAt(service, S.CREATED);
 
       await expect(service.transition(randomUUID(), id, S.CANCELLED)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('conditional updates', () => {
+    it('edits details of a CREATED order when the version matches', async () => {
+      const { service } = setup();
+      const id = await createAt(service, S.CREATED);
+      const dropoff = { lat: 19.36, lng: -99.16, address: 'Coyoacán 10' };
+
+      const updated = await service.updateDetails(merchant, id, { dropoff, amountCents: 20_000 }, 0);
+
+      expect(updated).toMatchObject({ dropoff, amountCents: 20_000, version: 1, status: S.CREATED });
+      expect(updated.items).toHaveLength(1);
+    });
+
+    it('rejects a stale version with 412', async () => {
+      const { service } = setup();
+      const id = await createAt(service, S.CREATED);
+      await service.updateDetails(merchant, id, { amountCents: 1 }, 0);
+
+      await expect(service.updateDetails(merchant, id, { amountCents: 2 }, 0)).rejects.toBeInstanceOf(
+        PreconditionFailedError,
+      );
+    });
+
+    it('refuses to edit orders past CREATED', async () => {
+      const { service } = setup();
+      const id = await createAt(service, S.PAYMENT_PENDING);
+
+      await expect(service.updateDetails(merchant, id, { amountCents: 1 }, 1)).rejects.toBeInstanceOf(
+        OrderNotEditableError,
+      );
+    });
+
+    it('applies the expected version to transitions too', async () => {
+      const { service } = setup();
+      const id = await createAt(service, S.CREATED);
+
+      await expect(service.transition(merchant, id, S.CANCELLED, undefined, 5)).rejects.toBeInstanceOf(
+        PreconditionFailedError,
+      );
+      await expect(service.transition(merchant, id, S.CANCELLED, undefined, 0)).resolves.toMatchObject({ version: 1 });
+    });
+
+    it('turns a lost race into 412 when the client sent If-Match', async () => {
+      const { service } = setup();
+      const id = await createAt(service, S.PAID);
+
+      const results = await Promise.allSettled([
+        service.transition(merchant, id, S.ASSIGNED, undefined, 2),
+        service.transition(merchant, id, S.CANCELLED, undefined, 2),
+      ]);
+
+      const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')!;
+      expect(rejected.reason).toBeInstanceOf(PreconditionFailedError);
     });
   });
 

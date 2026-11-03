@@ -1,6 +1,11 @@
 import { type Order as OrderRow, type Prisma } from '@prisma/client';
 import { type Currency, type Location, type Order, type OrderItem, type OrderStatus } from './domain/order';
-import { type ListOrdersQuery, type OrdersPage, type OrdersRepository } from './orders.repository';
+import {
+  type ListOrdersQuery,
+  type OrderDetailsChange,
+  type OrdersPage,
+  type OrdersRepository,
+} from './orders.repository';
 
 function toDomain(row: OrderRow): Order {
   return {
@@ -69,6 +74,25 @@ export class PrismaOrdersRepository implements OrdersRepository {
     const { count } = await this.prisma.order.updateMany({
       where: { id, version: expectedVersion },
       data: { status, updatedAt: at, version: { increment: 1 } },
+    });
+    return count === 1 ? this.findById(id) : null;
+  }
+
+  async updateDetails(
+    id: string,
+    expectedVersion: number,
+    change: OrderDetailsChange,
+    at: Date,
+  ): Promise<Order | null> {
+    const { count } = await this.prisma.order.updateMany({
+      where: { id, version: expectedVersion },
+      data: {
+        ...(change.dropoff ? { dropoff: change.dropoff as unknown as Prisma.InputJsonObject } : {}),
+        ...(change.items ? { items: change.items as unknown as Prisma.InputJsonArray } : {}),
+        ...(change.amountCents !== undefined ? { amountCents: change.amountCents } : {}),
+        updatedAt: at,
+        version: { increment: 1 },
+      },
     });
     return count === 1 ? this.findById(id) : null;
   }

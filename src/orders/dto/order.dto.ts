@@ -87,6 +87,30 @@ export class CreateOrderDto {
   currency!: Currency;
 }
 
+export class UpdateOrderDto {
+  @ApiPropertyOptional({ type: LocationDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LocationDto)
+  dropoff?: LocationDto;
+
+  @ApiPropertyOptional({ type: [OrderItemDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items?: OrderItemDto[];
+
+  @ApiPropertyOptional({ example: 21_500 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100_000_000)
+  amountCents?: number;
+}
+
 export class TransitionOrderDto {
   @ApiProperty({ enum: OrderStatus, example: OrderStatus.CANCELLED, description: 'Target status' })
   @IsEnum(OrderStatus)
