@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "idempotency_keys" ALTER COLUMN "response_body" SET DATA TYPE TEXT;
+

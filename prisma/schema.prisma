@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
@@ -54,7 +54,8 @@ model IdempotencyKey {
   key            String   @db.VarChar(255)
   requestHash    String   @map("request_hash") @db.Char(64)
   responseStatus Int?     @map("response_status")
-  responseBody   Json?    @map("response_body")
+  // Stored verbatim (not JSONB, which reorders keys) so replays are byte-identical.
+  responseBody   String?  @map("response_body") @db.Text
   createdAt      DateTime @map("created_at") @db.Timestamptz(3)
 
   @@id([merchantId, key])

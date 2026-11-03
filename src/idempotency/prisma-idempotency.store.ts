@@ -15,7 +15,9 @@ function toRecord(row: IdempotencyKey): IdempotencyRecord {
     key: row.key,
     requestHash: row.requestHash,
     response:
-      row.responseStatus === null ? null : { statusCode: row.responseStatus, body: row.responseBody as unknown },
+      row.responseStatus === null || row.responseBody === null
+        ? null
+        : { statusCode: row.responseStatus, body: JSON.parse(row.responseBody) as unknown },
     createdAt: row.createdAt,
   };
 }
@@ -40,7 +42,7 @@ export class PrismaIdempotencyStore implements IdempotencyStore {
   async complete(merchantId: string, key: string, response: StoredResponse): Promise<void> {
     await this.prisma.idempotencyKey.update({
       where: { merchantId_key: { merchantId, key } },
-      data: { responseStatus: response.statusCode, responseBody: response.body as Prisma.InputJsonValue },
+      data: { responseStatus: response.statusCode, responseBody: JSON.stringify(response.body) },
     });
   }
 
