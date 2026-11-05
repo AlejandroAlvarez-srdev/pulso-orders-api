@@ -38,6 +38,44 @@ jobs:
 
       - run: npm run build
 
+  integration:
+    name: Integration tests on PostgreSQL
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pulso
+          POSTGRES_PASSWORD: pulso
+          POSTGRES_DB: pulso_orders_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pulso -d pulso_orders_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://pulso:pulso@localhost:5432/pulso_orders_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Applies the committed migrations, the same way the compose `migrate` service does.
+      - run: npx prisma migrate deploy
+
+      - name: Schema matches the migrations
+        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
+      - run: npm run test:integration -- --ci
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest
