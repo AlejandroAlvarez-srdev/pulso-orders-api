@@ -1,6 +1,6 @@
 <p align="center"><img src="assets/banner.svg" alt="pulso-orders-api" width="100%"></p>
 
-<p align="center"><a href="https://github.com/AlejandroAlvarez-srdev/pulso-orders-api/actions/workflows/ci.yml"><img src="https://github.com/AlejandroAlvarez-srdev/pulso-orders-api/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <img src="https://img.shields.io/badge/23_commitsNestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS"> <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"> <img src="https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma"> <img src="https://img.shields.io/badge/Postgres-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres"> <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white" alt="Jest"> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"> <img src="https://img.shields.io/badge/22_commits-6a178c?style=for-the-badge" alt="23 commits"></p>
+<p align="center"><a href="https://github.com/AlejandroAlvarez-srdev/pulso-orders-api/actions/workflows/ci.yml"><img src="https://github.com/AlejandroAlvarez-srdev/pulso-orders-api/actions/workflows/ci.yml/badge.svg" alt="CI"></a> <img src="https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white" alt="NestJS"> <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"> <img src="https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white" alt="Prisma"> <img src="https://img.shields.io/badge/Postgres-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres"> <img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white" alt="Jest"> <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"> <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="GitHub Actions"> <img src="https://img.shields.io/badge/22_commits-6a178c?style=for-the-badge" alt="23 commits"></p>
 
 <h1 align="center">pulso-orders-api</h1>
 <!-- /header -->
@@ -26,7 +26,7 @@ with other services:
 
 <table>
   <tr>
-    <td align="center" width="25%"><b>182 (unit + e2e + contract)</b><br>Tests</td>
+    <td align="center" width="25%"><b>183 + 15 on PostgreSQL</b><br>Tests</td>
     <td align="center" width="25%"><b>Atomic outbox in one transaction</b><br>Consistency</td>
     <td align="center" width="25%"><b>Optimistic locking, ETag/If-Match</b><br>Concurrency</td>
     <td align="center" width="25%"><b>Rate limits, /metrics, graceful drain</b><br>Ops</td>
@@ -159,8 +159,12 @@ them, through a `UnitOfWork` port:
   transaction. Several instances can drain the table without delivering the same row twice. Each
   outcome is recorded before the locks are released.
 - **Per-order ordering.** A row is skipped while an earlier row of the same order is still
-  undelivered, so `order.cancelled` never overtakes `order.created`. Each tick keeps draining while
-  it makes progress, so a chain of events for one order clears quickly.
+  undelivered, so `order.cancelled` never overtakes `order.created`. "Earlier" means a lower `seq`,
+  a database sequence assigned at insert, not an earlier `occurred_at`: the timestamp comes from
+  the writer's clock, and two replicas whose clocks disagree by a few milliseconds could stamp a
+  cancellation before the creation it follows. Events of one order are written by transactions
+  that serialize on the order row, so their `seq` follows commit order. Each tick keeps draining
+  while it makes progress, so a chain of events for one order clears quickly.
 - **Retries.** Failed deliveries are retried with capped exponential backoff with equal jitter
   (1 s, 2 s, 4 s, … up to 5 min). `attempts`, `next_attempt_at` and `last_error` are stored on
   the row.
@@ -179,10 +183,13 @@ and validates every delivered event against them in Ajv strict mode.
 ## Design decisions and trade-offs
 
 - **Ports and a DI token swap instead of mocking Prisma.** Unit, e2e and contract tests run in a
-  few seconds with no database. The cost is that the Prisma adapters are not exercised in CI. They
-  were verified by hand against a PostgreSQL-compatible server (PGlite). That check found that
-  JSONB reorders keys, which would have broken byte-identical idempotent replays, so the stored
-  response is now `TEXT`. A Testcontainers job is the obvious next step for CI.
+  few seconds with no database. The Prisma adapters are covered separately by an integration suite
+  that CI runs against a PostgreSQL 17 service container (see [Testing](#testing)). Testing against
+  a real database has paid off twice: JSONB reorders keys, which would have broken byte-identical
+  idempotent replays (the stored response is now `TEXT`), and the relay ordered each order's events
+  by the writer's timestamp, which clock skew between replicas could invert (it now orders by an
+  insert sequence). The in-memory outbox always used commit order, so only the database suite
+  could see the second one.
 - **Outbox over dual writes.** Publishing to a broker before or after committing loses or invents
   events when the process dies in between. Writing the event row in the same transaction costs a
   little latency and gives at-least-once delivery, but an order can never exist without its event
@@ -335,7 +342,7 @@ npm run test:e2e
 npm run test:cov
 ```
 
-182 tests: 110 unit and 72 e2e/contract.
+183 tests: 111 unit and 72 e2e/contract.
 
 - **Unit** (`src/**/*.spec.ts`):
   - state machine graph, cursor codec, ETag parsing, token bucket, backoff, `PeriodicTask`
@@ -358,8 +365,32 @@ npm run test:cov
 - **Contracts** (`test/contracts.e2e-spec.ts`): delivered events against `contracts/` schemas,
   plus negative cases that would break consumers.
 
+**Integration on PostgreSQL** (`test/integration/*.int-spec.ts`, 15 tests): the Prisma adapters
+and the HTTP pipeline with `PERSISTENCE=prisma`, against a migrated database. Not part of
+`npm test`; it needs `DATABASE_URL` and truncates every table, so point it at a throwaway database:
+
+```bash
+docker compose up -d postgres
+docker compose exec postgres createdb -U pulso pulso_orders_test
+export DATABASE_URL=postgresql://pulso:pulso@localhost:5432/pulso_orders_test
+npx prisma migrate deploy
+npm run test:integration
+```
+
+- concurrent reservations of one `Idempotency-Key`: exactly one wins; expired keys are replaced;
+  stored responses survive byte for byte
+- compare-and-set updates under concurrent writers; keyset pagination across equal `created_at`
+- unit of work: a failing outbox insert leaves no order row; order, event and response commit
+  together
+- relay: per-order commit order under clock skew, hold-back while an earlier event is failing,
+  three relays draining concurrently with no event handed out twice
+- HTTP: idempotent create and replay, `If-Match` on `PATCH` and transitions, cancellation
+  delivered after creation, cursor pagination
+
 CI (`.github/workflows/ci.yml`) runs a production dependency audit, lint, typecheck, tests and
-build, then builds the Docker image and checks that it runs as a non-root user. See
+build. A second job starts PostgreSQL 17, applies the migrations with `prisma migrate deploy`,
+fails if `schema.prisma` has drifted from them (`prisma migrate diff --exit-code`) and runs the
+integration suite. A third builds the Docker image and checks that it runs as a non-root user. See
 [SECURITY.md](SECURITY.md) for the dependency policy and known advisories.
 
 ## What this demonstrates
@@ -375,8 +406,8 @@ build, then builds the Docker image and checks that it runs as a non-root user. 
 - JWT bearer auth with scopes, per-merchant token-bucket rate limiting
 - Operability: RFC 9457 errors, request-id correlation, structured logs, Prometheus metrics,
   liveness and readiness probes, and graceful shutdown with a drain phase
-- Fast, database-free unit/e2e/contract tests; multi-stage non-root Docker image; CI with audit
-  gate
+- Fast, database-free unit/e2e/contract tests, plus an integration suite on real PostgreSQL in
+  CI with a migration drift check; multi-stage non-root Docker image; CI with audit gate
 
 ## License
 
