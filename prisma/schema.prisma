@@ -74,9 +74,13 @@ model OutboxEvent {
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
   lastError     String?   @map("last_error")
+  // Insertion order from a database sequence. Two events of one order are written by
+  // transactions that serialize on the order row, so seq follows their commit order;
+  // occurred_at comes from the writer's clock and can disagree across replicas.
+  seq           BigInt    @default(autoincrement())
 
   // Relay polls due, unpublished events; per-aggregate ordering looks up earlier pending rows.
   @@index([publishedAt, nextAttemptAt])
-  @@index([aggregateId, publishedAt, occurredAt])
+  @@index([aggregateId, publishedAt, seq])
   @@map("outbox_events")
 }

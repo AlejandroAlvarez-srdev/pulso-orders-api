@@ -22,6 +22,11 @@ const MAX_ERROR_LENGTH = 1000;
  * Claims rows with `FOR UPDATE SKIP LOCKED` inside one transaction, so several
  * relay instances can drain the same table without double delivery, and
  * records each outcome before the locks are released.
+ *
+ * Ordering uses `seq` (a database sequence, i.e. insertion order), not
+ * `occurred_at`: the timestamp comes from the writer's clock, and replicas
+ * whose clocks disagree could otherwise release order.cancelled before the
+ * order.created it follows.
  */
 export class PrismaOutboxRelayStore implements OutboxRelayStore {
   constructor(
@@ -49,9 +54,9 @@ export class PrismaOutboxRelayStore implements OutboxRelayStore {
               SELECT 1 FROM outbox_events earlier
               WHERE earlier.aggregate_id = e.aggregate_id
                 AND earlier.published_at IS NULL
-                AND (earlier.occurred_at, earlier.id) < (e.occurred_at, e.id)
+                AND earlier.seq < e.seq
             )
-          ORDER BY e.occurred_at, e.id
+          ORDER BY e.seq
           LIMIT ${limit}
           FOR UPDATE OF e SKIP LOCKED`;
 

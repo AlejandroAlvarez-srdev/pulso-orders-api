@@ -127,6 +127,20 @@ describe('OutboxRelay', () => {
     expect(publisher.delivered.map((e) => e.id)).not.toContain(cancelled.id);
   });
 
+  it('orders an aggregate by commit order, not by the timestamp the writer stamped', async () => {
+    // A replica whose clock runs 50 ms behind commits the cancellation after the creation.
+    const { relay, publisher, outbox, clock } = setup();
+    const at = clock.now();
+    const created = { id: randomUUID(), type: 'order.created', aggregateId: 'order-1', occurredAt: at, payload: {} };
+    const cancelled = { ...created, id: randomUUID(), type: 'order.cancelled', occurredAt: new Date(at.getTime() - 50) };
+    outbox.appendSync(created);
+    outbox.appendSync(cancelled);
+
+    await relay.drainAvailable();
+
+    expect(publisher.delivered.map((e) => e.type)).toEqual(['order.created', 'order.cancelled']);
+  });
+
   it('never hands the same event to two concurrent drains', async () => {
     const { relay, publisher, record } = setup();
     for (let i = 0; i < 6; i++) record();
